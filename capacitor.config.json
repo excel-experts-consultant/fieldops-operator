@@ -1,0 +1,7 @@
+{
+  "appId": "com.dashboarddr.fieldops.operator",
+  "appName": "FieldOps Operator",
+  "webDir": "public",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}

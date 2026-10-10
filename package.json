@@ -1,0 +1,22 @@
+{
+  "name": "fieldops-operator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Operator app: डीज़ल भरना entries to the sheet, and a per-employee view of the FL Rep report",
+  "scripts": {
+    "deploy": "wrangler pages deploy public",
+    "db:schema": "wrangler d1 execute fieldops-operator --remote --file=./schema.sql",
+    "android:add": "npx cap add android",
+    "android:sync": "npx cap sync android",
+    "apk": "npx cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "wrangler": "^3.90.0"
+  }
+}
