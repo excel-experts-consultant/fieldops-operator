@@ -127,6 +127,9 @@
   .modal .sheet-foot { display: flex; padding: 14px 20px; border-top: 1px solid var(--mist-100); background: var(--mist-50); }
   .modal .sheet-foot .spring { margin-left: auto; }
   .acct-block { border-top: 1px solid var(--mist-100); padding-top: 14px; margin-top: 16px; }
+  /* `button.quiet-btn` in app.css would otherwise win on specificity */
+  button.quiet-btn.danger-btn { color: var(--bad); margin-left: 10px; }
+  button.quiet-btn.danger-btn:hover { color: #fff; background: var(--bad); }
   .acct-title { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--dim-light); margin-bottom: 10px; }
 </style>
 </head>
@@ -620,6 +623,7 @@ function renderCrew() {
       <td style="text-align:right;white-space:nowrap">
         <button class="quiet-btn" data-reset="${u.id}">Reset password</button>
         <button class="quiet-btn" data-toggle="${u.id}" data-active="${u.active}">${u.active ? 'Disable' : 'Enable'}</button>
+        <button class="quiet-btn danger-btn" data-del="${u.id}" data-name="${esc(u.name)}" data-user="${esc(u.username)}" data-nsites="${u.sites}">Delete</button>
       </td>
     </tr>`).join('') : `<tr class="empty-row"><td colspan="6">${EMPS.length ? 'No one matches.' : 'No employee logins yet.'}</td></tr>`;
 }
@@ -641,7 +645,8 @@ $('staff-go').addEventListener('click', async () => {
 $('e-user').addEventListener('input', (e) => { const p = e.target.selectionStart; e.target.value = e.target.value.toLowerCase(); e.target.setSelectionRange(p, p); });
 
 $('staff-body').addEventListener('click', async (e) => {
-  const sites = e.target.closest('[data-sites]'), reset = e.target.closest('[data-reset]'), toggle = e.target.closest('[data-toggle]');
+  const sites = e.target.closest('[data-sites]'), reset = e.target.closest('[data-reset]'),
+        toggle = e.target.closest('[data-toggle]'), del = e.target.closest('[data-del]');
   if (sites) {
     document.querySelector('#nav [data-tab=allocate]').click();
     if (mode !== 'emp') setMode('emp');
@@ -658,6 +663,29 @@ $('staff-body').addEventListener('click', async (e) => {
     if (!on && !confirm('Disable this login? They are signed out at once and cannot sign in until enabled.')) return;
     await api('/admin/employees/' + toggle.dataset.toggle, { method: 'PATCH', body: { active: on } });
     await loadEmployees(); renderCrew(); loadSummary();
+  }
+  if (del) {
+    const { del: id, name, user, nsites } = del.dataset;
+    const n = Number(nsites);
+    const warn = `Delete ${name} (${user}) for good?\n\n`
+      + `• Their login stops working at once\n`
+      + (n ? `• Their ${n} allocated ${n === 1 ? 'site is' : 'sites are'} released\n` : '')
+      + `• Entries they already filed are KEPT and still show their name\n\n`
+      + `This cannot be undone. To block them temporarily instead, use Disable.`;
+    if (!confirm(warn)) return;
+    del.disabled = true; del.textContent = 'Deleting…';
+    try {
+      const d = await api('/admin/employees/' + id, { method: 'DELETE' });
+      await loadEmployees(); renderCrew(); loadSummary();
+      // If their allocation screen is open, drop back to nothing selected.
+      if (mode === 'emp' && sel === Number(id)) { sel = null; saved = new Set(); ticked = new Set(); renderLeft(); renderRight(); }
+      note($('staff-note'), `${d.name} deleted.`
+        + (d.entries_kept ? ` ${plural(d.entries_kept, 'entry', 'entries')} kept under their name.` : '')
+        + (d.sites_removed ? ` ${plural(d.sites_removed, 'site', 'sites')} released.` : ''), 'good');
+    } catch (err) {
+      note($('staff-note'), err.message, 'bad');
+      del.disabled = false; del.textContent = 'Delete';
+    }
   }
 });
 

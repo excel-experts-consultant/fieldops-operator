@@ -40,7 +40,10 @@ CREATE INDEX idx_access_code ON site_access(site_code);
 -- from here in batches, so a busy minute or a Google hiccup never loses one.
 CREATE TABLE entries (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  employee_id       INTEGER NOT NULL REFERENCES users(id),
+  -- The name is copied in at submit time, so an entry (and column K of the
+  -- sheet) still says who filed it after that employee is deleted.
+  employee_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  employee_name     TEXT NOT NULL,
   site_text         TEXT NOT NULL,
   diesel_filled     TEXT NOT NULL,    -- column D
   generator_reading TEXT NOT NULL,    -- column F

@@ -112,14 +112,37 @@ node make-admin.js "Jay Gupta" superadmin YourPassword
 Run the `npx wrangler d1 execute …` line it prints (or double-click `create-admin.bat`).
 Sign in at your Pages URL — the superadmin lands on the console.
 
-### 5. Android app
+### 5. GitHub and the Android app
 
-1. In `public/js/api.js` set `window.FIELDOPS_API` to your Pages URL.
-2. Push this folder to its own GitHub repository. The **Actions** tab builds the APK; download
-   **FieldOps-Operator-APK** from the latest run.
+Use the **same GitHub account** as the first app, but a **new, separate repository**.
+
+> Do not push this into `task_status_form`. That repository holds the live FieldOps app, and
+> pushing these files over it would replace that app and break the running APK build.
+
+First, set your Pages URL in `public/js/api.js`:
+
+```
+window.FIELDOPS_API = 'https://fieldops-operator.pages.dev';
+```
+
+Create an empty repository on GitHub (e.g. `fieldops-operator`), with no README or .gitignore, then
+from this folder:
+
+```
+git init
+git add .
+git commit -m "FieldOps Operator"
+git branch -M main
+git remote add origin https://github.com/YOUR-ACCOUNT/fieldops-operator.git
+git push -u origin main
+```
+
+The push starts the build. Open the repository's **Actions** tab, wait for the green tick, open the
+run, and download **FieldOps-Operator-APK** at the bottom. It arrives as a zip; unzip it for
+`app-debug.apk`.
 
 The app ID is `com.dashboarddr.fieldops.operator`, so it installs **alongside** the existing FieldOps
-app on the same phone.
+app. Operators can have both on one phone.
 
 ---
 
@@ -127,6 +150,10 @@ app on the same phone.
 
 - **New operators:** Employees → *Add many at once*. Paste `Name, username` lines; leave passwords
   out and 6-digit ones are generated. Download the CSV straight away — passwords are not shown again.
+- **Someone leaves:** Employees → **Delete** on their row. Their login stops working at once and their
+  sites are released, but the entries they filed are kept and still show their name, in the console and
+  in the sheet. Their username becomes free to reuse. To block someone only temporarily, use **Disable**
+  instead — that keeps their site list so re-enabling restores everything.
 - **Give sites:** Allocate sites → *By employee* (tick their sites) or *By site* (tick everyone who
   should see it). Filter by section, then *Tick all shown* to give a whole route at once.
 - **Renamed a site in the sheet?** Allocations follow it by the code before the `_` (A01, ZF4…).
@@ -137,4 +164,27 @@ app on the same phone.
 
 ## Updating
 
-After changing code: deploy with the `pages deploy` line above, and `git push` to rebuild the APK.
+After changing code:
+
+```
+npx wrangler pages deploy public --project-name fieldops-operator --branch main --commit-dirty=true
+git add -A && git commit -m "what changed" && git push
+```
+
+The deploy updates the website and the console at once. The push rebuilds the APK, which operators
+only need to reinstall if the app's own screens changed — the APK loads the live site, so most
+changes reach them without a new install.
+
+## If something goes wrong
+
+| What you see | What it means |
+|---|---|
+| `Configuration file for Pages projects does not support account_id` | Remove `account_id` from `wrangler.toml`. |
+| `Unterminated string in JSON at position 1020` on the site | The service-account secret was pasted into the prompt and cut off. Re-send it from a file as in step 3. |
+| `authentication error` on `d1 execute --file` | Use `schema-commands.bat` instead. |
+| `UNIQUE constraint failed: users.username` | That username exists. Pick another, or use *Reset password* in the console. |
+| Operators see no sites | They have none allocated yet, or the sheet's tab is not named `FL Rep`. |
+| Delete says entries "have not reached the sheet yet" | Google is behind. Wait a minute, or press *Write waiting entries to the sheet now* under Entries, then delete. This guard means deleting someone can never be what loses an entry. |
+| `no such column: employee_name` | The database predates employee deletion. Run `migrate-employee-delete.sql` (or the .bat) once. |
+| `Google Sheets is busy` | Google's per-minute quota was hit. Entries are safe and go in automatically; nothing to do. |
+| APK installs but shows a blank screen | `window.FIELDOPS_API` in `public/js/api.js` is wrong or unset. Fix it, push, rebuild. |

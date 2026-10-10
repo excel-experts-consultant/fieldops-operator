@@ -465,9 +465,9 @@ async function flushEntries(env) {
   try {
     for (let round = 0; round < 5; round++) {
       const { results } = await env.DB.prepare(`
-        SELECT e.id, e.site_text, e.diesel_filled, e.generator_reading, e.entry_stamp, u.name AS employee_name
-        FROM entries e JOIN users u ON u.id = e.employee_id
-        WHERE e.sheet_status = 'pending' ORDER BY e.id LIMIT ?
+        SELECT id, site_text, diesel_filled, generator_reading, entry_stamp, employee_name
+        FROM entries
+        WHERE sheet_status = 'pending' ORDER BY id LIMIT ?
       `).bind(BATCH).all();
       if (!results.length) break;
 
@@ -700,6 +700,53 @@ async function route({ path, method, body, url, request, env, ctx }) {
       return json({ ok: true });
     }
 
+    /**
+     * Delete an employee for good. Their sign-in and site list go; the entries
+     * they already filed stay, still showing their name, because those are a
+     * record of work that is already in the sheet.
+     * employee_id is cleared explicitly rather than relying on ON DELETE SET
+     * NULL, so this works whatever the database's foreign-key setting.
+     */
+    if (empMatch && method === 'DELETE') {
+      const id = Number(empMatch[1]);
+      const target = await env.DB.prepare(
+        "SELECT id, name, username FROM users WHERE id = ? AND role = 'employee'",
+      ).bind(id).first();
+      if (!target) return fail('No such employee', 404);
+
+      const counts = await env.DB.prepare(`
+        SELECT (SELECT COUNT(*) FROM entries WHERE employee_id = ?1) AS entries,
+               (SELECT COUNT(*) FROM entries WHERE employee_id = ?1 AND sheet_status = 'pending') AS pending,
+               (SELECT COUNT(*) FROM site_access WHERE employee_id = ?1) AS sites
+      `).bind(id).first();
+
+      // Anything of theirs still queued goes to the sheet first, so deleting
+      // the person can never be what loses an entry.
+      if (counts.pending) {
+        await flushEntries(env);
+        const left = await env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM entries WHERE employee_id = ? AND sheet_status = 'pending'",
+        ).bind(id).first();
+        if (left.n && !body.force) {
+          return fail(
+            `${left.n} of their entries have not reached the sheet yet. Try again in a minute, `
+            + 'or use Disable instead so nothing is lost.', 409,
+          );
+        }
+      }
+
+      await env.DB.batch([
+        env.DB.prepare('UPDATE entries SET employee_id = NULL WHERE employee_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM site_access WHERE employee_id = ?').bind(id),
+        env.DB.prepare("DELETE FROM users WHERE id = ? AND role = 'employee'").bind(id),
+      ]);
+      return json({
+        ok: true,
+        name: target.name, username: target.username,
+        entries_kept: counts.entries, sites_removed: counts.sites,
+      });
+    }
+
     /* The sites one employee can see, matched against the live report. */
     const accessMatch = /^\/admin\/access\/(\d+)$/.exec(path);
     if (accessMatch && method === 'GET') {
@@ -815,11 +862,11 @@ async function route({ path, method, body, url, request, env, ctx }) {
     if (path === '/admin/entries' && method === 'GET') {
       const emp = Number(url.searchParams.get('employee_id')) || null;
       const { results } = await env.DB.prepare(`
-        SELECT e.id, e.site_text, e.diesel_filled, e.generator_reading, e.entry_stamp,
-               e.sheet_status, e.sheet_row, e.created_at, u.name AS employee_name
-        FROM entries e JOIN users u ON u.id = e.employee_id
-        WHERE (?1 IS NULL OR e.employee_id = ?1)
-        ORDER BY e.id DESC LIMIT 300
+        SELECT id, site_text, diesel_filled, generator_reading, entry_stamp,
+               sheet_status, sheet_row, created_at, employee_name
+        FROM entries
+        WHERE (?1 IS NULL OR employee_id = ?1)
+        ORDER BY id DESC LIMIT 300
       `).bind(emp).all();
       return json({ ok: true, entries: results });
     }
@@ -888,9 +935,10 @@ async function route({ path, method, body, url, request, env, ctx }) {
       const when = body.queued && taken > now - 7 * 864e5 && taken < now + 5 * 60e3 ? new Date(taken) : new Date(now);
 
       const row = await env.DB.prepare(`
-        INSERT INTO entries (employee_id, site_text, diesel_filled, generator_reading, entry_stamp, client_uuid)
-        VALUES (?, ?, ?, ?, ?, ?) RETURNING id
-      `).bind(emp.id, site, diesel, gen, stampAt(when, env.TIMEZONE), body.client_uuid ? String(body.client_uuid) : null).first();
+        INSERT INTO entries (employee_id, employee_name, site_text, diesel_filled, generator_reading, entry_stamp, client_uuid)
+        VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
+      `).bind(emp.id, emp.name, site, diesel, gen, stampAt(when, env.TIMEZONE),
+              body.client_uuid ? String(body.client_uuid) : null).first();
 
       const r = await flushEntries(env);
       if (r.busy) kickFlush(env, ctx, 1500); // someone else is writing; make sure ours is not left behind
