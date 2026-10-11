@@ -17,6 +17,8 @@ CREATE TABLE users (
   name          TEXT NOT NULL,
   phone         TEXT,
   active        INTEGER NOT NULL DEFAULT 1,
+  -- Bumped by "Sign out all devices"; a token carrying an older number is refused.
+  token_version INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_users_role ON users(role, active);
@@ -35,6 +37,21 @@ CREATE TABLE site_access (
 );
 CREATE INDEX idx_access_site ON site_access(site_name);
 CREATE INDEX idx_access_code ON site_access(site_code);
+
+-- One row per phone (or browser) an account has signed in on. The device id is
+-- made once by the app and kept in its own storage, so reinstalling the app or
+-- clearing its data counts as a new device.
+CREATE TABLE devices (
+  employee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_id   TEXT NOT NULL,
+  label       TEXT,                 -- e.g. "Android 13 · SM-A135F"
+  platform    TEXT,                 -- 'android' | 'web'
+  first_seen  TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen   TEXT NOT NULL DEFAULT (datetime('now')),
+  logins      INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (employee_id, device_id)
+);
+CREATE INDEX idx_devices_emp ON devices(employee_id, last_seen);
 
 -- Every डीज़ल भरना entry. D1 is the source of truth; the sheet is written
 -- from here in batches, so a busy minute or a Google hiccup never loses one.

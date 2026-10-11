@@ -83,9 +83,64 @@ async function requireUser(request, env, role) {
   if (!session) return null;
   if (role && session.role !== role) return null;
   const user = await env.DB.prepare(
-    'SELECT id, username, name, role, active FROM users WHERE id = ?',
+    'SELECT id, username, name, role, active, token_version FROM users WHERE id = ?',
   ).bind(session.uid).first();
-  return user && user.active ? user : null;
+  if (!user || !user.active) return null;
+  // "Sign out all devices" bumps token_version, which retires every token issued before it.
+  if (Number(session.tv || 0) !== Number(user.token_version || 0)) return null;
+  return user;
+}
+
+/* ------------------------------------------------------------------ devices */
+
+/** A short, human label from the browser/WebView user agent. No IP is stored. */
+function deviceLabel(ua) {
+  const u = String(ua || '');
+  const android = /Android\s+([\d.]+)[^)]*?;\s*([^;)]+?)(?:\s+Build\/|\))/i.exec(u);
+  if (android) return `Android ${android[1]} · ${android[2].trim()}`.slice(0, 60);
+  if (/Android/i.test(u)) return 'Android phone';
+  if (/iPhone|iPad|iPod/i.test(u)) return /iPad/i.test(u) ? 'iPad' : 'iPhone';
+  const browser = /(Edg|OPR|Chrome|Firefox|Safari)\/[\d.]+/i.exec(u);
+  const os = /Windows NT/i.test(u) ? 'Windows' : /Mac OS X/i.test(u) ? 'Mac'
+    : /Linux/i.test(u) ? 'Linux' : '';
+  const name = browser ? { Edg: 'Edge', OPR: 'Opera' }[browser[1]] || browser[1] : 'Browser';
+  return [name, os].filter(Boolean).join(' on ').slice(0, 60) || 'Unknown device';
+}
+
+const cleanDeviceId = (v) => {
+  const d = String(v || '').trim();
+  return /^[A-Za-z0-9._-]{8,64}$/.test(d) ? d : null;
+};
+
+/** Record a sign-in from this device, or bump its counters if already known. */
+async function recordDevice(env, request, body, userId) {
+  const id = cleanDeviceId(body.device_id);
+  if (!id) return;
+  const ua = request.headers.get('user-agent') || '';
+  const platform = body.platform === 'android' || /wv\)/.test(ua) ? 'android' : 'web';
+  await env.DB.prepare(`
+    INSERT INTO devices (employee_id, device_id, label, platform)
+    VALUES (?1, ?2, ?3, ?4)
+    ON CONFLICT(employee_id, device_id) DO UPDATE SET
+      last_seen = datetime('now'), logins = logins + 1,
+      label = excluded.label, platform = excluded.platform
+  `).bind(userId, id, deviceLabel(ua), platform).run();
+}
+
+/**
+ * Keep last_seen roughly current without a database write on every request:
+ * only write when the stored value is already more than 30 minutes old.
+ */
+async function touchDevice(env, request, userId) {
+  const id = cleanDeviceId(request.headers.get('x-device-id'));
+  if (!id) return;
+  const row = await env.DB.prepare(
+    "SELECT 1 AS stale FROM devices WHERE employee_id = ? AND device_id = ? AND last_seen < datetime('now','-30 minutes')",
+  ).bind(userId, id).first();
+  if (!row) return;
+  await env.DB.prepare(
+    "UPDATE devices SET last_seen = datetime('now') WHERE employee_id = ? AND device_id = ?",
+  ).bind(userId, id).run();
 }
 
 const USERNAME_RE = /^[a-z0-9._-]{3,}$/;
@@ -566,13 +621,15 @@ async function route({ path, method, body, url, request, env, ctx }) {
   if (path === '/auth/login' && method === 'POST') {
     const username = String(body.username || '').trim().toLowerCase();
     const user = await env.DB.prepare(
-      'SELECT id, username, name, role, password_hash, active FROM users WHERE username = ?',
+      'SELECT id, username, name, role, password_hash, active, token_version FROM users WHERE username = ?',
     ).bind(username).first();
     if (!user || !user.active || !(await verifyPassword(String(body.password || ''), user.password_hash))) {
       return fail('Username or password is wrong', 401);
     }
+    if (user.role === 'employee') await recordDevice(env, request, body, user.id);
     const token = await signToken(env, {
-      uid: user.id, role: user.role, exp: Date.now() + 1000 * 60 * 60 * 24 * 30,
+      uid: user.id, role: user.role, tv: Number(user.token_version || 0),
+      exp: Date.now() + 1000 * 60 * 60 * 24 * 30,
     });
     return json({
       ok: true, token,
@@ -626,11 +683,14 @@ async function route({ path, method, body, url, request, env, ctx }) {
     if (path !== '/admin/sync') kickFlush(env, ctx);
 
     if (path === '/admin/summary' && method === 'GET') {
-      const [emps, today, pending, sync] = await Promise.all([
+      const [emps, today, pending, sync, multi] = await Promise.all([
         env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'employee' AND active = 1").first(),
         env.DB.prepare('SELECT COUNT(*) AS n FROM entries WHERE created_at >= ?').bind(localMidnightUtc(env.TIMEZONE)).first(),
         env.DB.prepare("SELECT COUNT(*) AS n FROM entries WHERE sheet_status = 'pending'").first(),
         kvGet(env, 'sync'),
+        env.DB.prepare(
+          'SELECT COUNT(*) AS n FROM (SELECT employee_id FROM devices GROUP BY employee_id HAVING COUNT(*) > 1)',
+        ).first(),
       ]);
       let report = null;
       let reportError = null;
@@ -639,6 +699,7 @@ async function route({ path, method, body, url, request, env, ctx }) {
         ok: true,
         admin: { id: admin.id, name: admin.name, username: admin.username },
         employees: emps.n, entries_today: today.n, pending: pending.n, sync,
+        multi_device: multi.n,
         sites: report ? report.sites.length : null,
         report_fetched_at: report?.fetched_at || null,
         report_error: report?.error || reportError,
@@ -664,10 +725,13 @@ async function route({ path, method, body, url, request, env, ctx }) {
 
     if (path === '/admin/employees' && method === 'GET') {
       const { results } = await env.DB.prepare(`
-        SELECT u.id, u.name, u.username, u.phone, u.active, COUNT(a.site_name) AS sites
-        FROM users u LEFT JOIN site_access a ON a.employee_id = u.id
+        SELECT u.id, u.name, u.username, u.phone, u.active,
+               (SELECT COUNT(*) FROM site_access a WHERE a.employee_id = u.id) AS sites,
+               (SELECT COUNT(*) FROM devices d WHERE d.employee_id = u.id) AS devices,
+               (SELECT MAX(d.last_seen) FROM devices d WHERE d.employee_id = u.id) AS last_seen
+        FROM users u
         WHERE u.role = 'employee'
-        GROUP BY u.id ORDER BY u.active DESC, u.name COLLATE NOCASE
+        ORDER BY u.active DESC, u.name COLLATE NOCASE
       `).all();
       return json({ ok: true, employees: results });
     }
@@ -709,6 +773,59 @@ async function route({ path, method, body, url, request, env, ctx }) {
       return json({ ok: true });
     }
 
+    /* Every device, newest first, with the accounts sharing a device flagged. */
+    if (path === '/admin/devices' && method === 'GET') {
+      const { results } = await env.DB.prepare(`
+        SELECT d.employee_id, d.device_id, d.label, d.platform, d.first_seen, d.last_seen, d.logins,
+               u.name, u.username, u.active
+        FROM devices d JOIN users u ON u.id = d.employee_id
+        ORDER BY d.last_seen DESC LIMIT 2000
+      `).all();
+      // A device id seen under more than one account means a shared phone.
+      const perDevice = new Map();
+      for (const r of results) perDevice.set(r.device_id, (perDevice.get(r.device_id) || 0) + 1);
+      return json({
+        ok: true,
+        devices: results.map((r) => ({ ...r, shared: perDevice.get(r.device_id) > 1 })),
+      });
+    }
+
+    /* The devices of one employee. */
+    const devMatch = /^\/admin\/devices\/(\d+)$/.exec(path);
+    if (devMatch && method === 'GET') {
+      const { results } = await env.DB.prepare(`
+        SELECT device_id, label, platform, first_seen, last_seen, logins
+        FROM devices WHERE employee_id = ? ORDER BY last_seen DESC
+      `).bind(Number(devMatch[1])).all();
+      return json({ ok: true, devices: results });
+    }
+
+    /* Forget one device. The phone is signed out the next time it calls. */
+    if (devMatch && method === 'DELETE') {
+      const id = Number(devMatch[1]);
+      const deviceId = cleanDeviceId(body.device_id);
+      if (!deviceId) return fail('Which device?', 400);
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM devices WHERE employee_id = ? AND device_id = ?').bind(id, deviceId),
+        env.DB.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').bind(id),
+      ]);
+      return json({ ok: true, signed_out_all: true });
+    }
+
+    /* Sign this employee out everywhere; every existing token stops working. */
+    if (/^\/admin\/employees\/(\d+)\/signout$/.test(path) && method === 'POST') {
+      const id = Number(/(\d+)/.exec(path)[1]);
+      const target = await env.DB.prepare("SELECT id, name FROM users WHERE id = ? AND role = 'employee'")
+        .bind(id).first();
+      if (!target) return fail('No such employee', 404);
+      const had = await env.DB.prepare('SELECT COUNT(*) AS n FROM devices WHERE employee_id = ?').bind(id).first();
+      await env.DB.batch([
+        env.DB.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').bind(id),
+        env.DB.prepare('DELETE FROM devices WHERE employee_id = ?').bind(id),
+      ]);
+      return json({ ok: true, name: target.name, devices: had.n });
+    }
+
     /**
      * Delete an employee for good. Their sign-in and site list go; the entries
      * they already filed stay, still showing their name, because those are a
@@ -747,6 +864,8 @@ async function route({ path, method, body, url, request, env, ctx }) {
       await env.DB.batch([
         env.DB.prepare('UPDATE entries SET employee_id = NULL WHERE employee_id = ?').bind(id),
         env.DB.prepare('DELETE FROM site_access WHERE employee_id = ?').bind(id),
+        // explicit, so it holds whether or not foreign keys are enforced
+        env.DB.prepare('DELETE FROM devices WHERE employee_id = ?').bind(id),
         env.DB.prepare("DELETE FROM users WHERE id = ? AND role = 'employee'").bind(id),
       ]);
       return json({
@@ -901,6 +1020,7 @@ async function route({ path, method, body, url, request, env, ctx }) {
   if (path.startsWith('/emp/')) {
     const emp = await requireUser(request, env, 'employee');
     if (!emp) return fail('Sign in again', 401);
+    ctx.waitUntil(touchDevice(env, request, emp.id).catch(() => {}));
 
     /* Only the sites the superadmin gave this employee, with the sheet's colours. */
     if (path === '/emp/sites' && method === 'GET') {

@@ -134,6 +134,15 @@
     background: var(--amber-soft); color: #8a5c05;
   }
   .kind.svc { background: rgba(53,160,184,.13); color: #1d6b7e; }
+  button.quiet-btn.warn-btn { color: var(--warn); font-weight: 700; }
+  .dev-tag {
+    font-family: var(--display); font-size: 11px; font-weight: 600;
+    padding: 2px 7px; border-radius: 20px; white-space: nowrap;
+    background: var(--mist-100); color: var(--ink-700);
+  }
+  .dev-tag.android { background: rgba(46,158,104,.12); color: #1d6b48; }
+  tr.flag td { background: #fff9ec; }
+  tr.flag:hover td { background: #fff4de; }
   button.quiet-btn.danger-btn { color: var(--bad); margin-left: 10px; }
   button.quiet-btn.danger-btn:hover { color: #fff; background: var(--bad); }
   .acct-title { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--dim-light); margin-bottom: 10px; }
@@ -157,6 +166,9 @@
       <button data-tab="entries">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 12.5 6 8l3 3 4.5-6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Entries<span class="tally" id="tally-pending"></span></button>
+      <button data-tab="devices">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4.5" y="1.5" width="7" height="13" rx="1.5"/><path d="M7 12.8h2" stroke-linecap="round"/></svg>
+        Devices<span class="tally" id="tally-dev"></span></button>
     </nav>
     <div class="who">
       <div class="name" id="who"></div>
@@ -173,6 +185,7 @@
       <div class="stat"><div class="k">Entries today</div><div class="v" id="s-today">—</div></div>
       <div class="stat" id="s-pending-wrap"><div class="k">Waiting for sheet</div><div class="v" id="s-pending">—</div></div>
       <div class="stat"><div class="k">FL Rep read at</div><div class="v small" id="s-flrep">—</div></div>
+      <div class="stat" id="s-multi-wrap"><div class="k">On 2+ devices</div><div class="v" id="s-multi">—</div></div>
       <div class="stat"><div class="k">Column L code</div><div class="v small" id="s-code">—</div></div>
     </div>
 
@@ -261,7 +274,7 @@
           <div class="panel-body flush">
             <div class="table-scroll" style="max-height:60vh">
               <table>
-                <thead><tr><th>Name</th><th>Username</th><th>Phone</th><th>Sites</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Name</th><th>Username</th><th>Phone</th><th>Sites</th><th>Devices</th><th>Status</th><th></th></tr></thead>
                 <tbody id="staff-body"></tbody>
               </table>
             </div>
@@ -290,6 +303,36 @@
               <table>
                 <thead><tr><th>Time (A)</th><th>Employee (K)</th><th>Screen</th><th>Site (B)</th><th>डीज़ल भरवाया (D)</th><th>जनरेटर की रीडिंग (F)</th><th>सर्विस के बाद (J)</th><th>Sheet</th></tr></thead>
                 <tbody id="ent-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================ devices -->
+      <section id="devices">
+        <div class="page-head">
+          <div>
+            <h1>Devices</h1>
+            <p>One row per phone an account has signed in on. The id is made by the app at install
+               and kept in its own storage, so reinstalling counts as a new device.</p>
+          </div>
+        </div>
+        <div class="notice hidden" id="dev-note"></div>
+        <div class="panel">
+          <div class="toolbar">
+            <input type="search" id="dev-search" placeholder="Search name, username or device">
+            <label class="row t-13" style="gap:7px;cursor:pointer">
+              <input type="checkbox" id="dev-only-multi" style="width:auto">
+              Only accounts on 2 or more devices
+            </label>
+            <span class="t-12 quiet" id="dev-count"></span>
+          </div>
+          <div class="panel-body flush">
+            <div class="table-scroll" style="max-height:66vh">
+              <table>
+                <thead><tr><th>Employee</th><th>Username</th><th>Device</th><th>App</th><th>First seen</th><th>Last seen</th><th>Logins</th><th></th></tr></thead>
+                <tbody id="dev-body"></tbody>
               </table>
             </div>
           </div>
@@ -370,6 +413,7 @@ $('nav').addEventListener('click', (e) => {
   $('sendbar').classList.toggle('hidden', tab !== 'allocate');
   if (tab === 'staff') renderCrew();
   if (tab === 'entries') loadEntries();
+  if (tab === 'devices') loadDevices();
   if (tab === 'allocate') { renderLeft(); renderRight(); }
 });
 window.addEventListener('beforeunload', (e) => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
@@ -385,6 +429,9 @@ async function loadSummary() {
     $('s-pending-wrap').classList.toggle('alert', d.pending > 0 && !!d.sync?.error);
     $('tally-pending').textContent = d.pending || '';
     $('s-flrep').textContent = d.report_fetched_at ? hhmm(d.report_fetched_at) : '—';
+    $('s-multi').textContent = d.multi_device ?? 0;
+    $('s-multi-wrap').classList.toggle('alert', (d.multi_device || 0) > 0);
+    $('tally-dev').textContent = d.multi_device || '';
     $('s-code').textContent = d.entry_code;
     if (d.report_error) note($('alloc-err'), 'Could not read FL Rep: ' + d.report_error, 'bad');
     const sync = d.sync;
@@ -625,13 +672,15 @@ function renderCrew() {
       <td class="mono-cell t-13">${esc(u.username)}</td>
       <td class="mono-cell t-13 quiet">${esc(u.phone || '—')}</td>
       <td class="mono-cell"><button class="quiet-btn" data-sites="${u.id}">${plural(u.sites, 'site', 'sites')}</button></td>
+      <td class="mono-cell"><button class="quiet-btn ${u.devices > 1 ? 'warn-btn' : ''}" data-dev="${u.id}" data-name="${esc(u.name)}">${
+        u.devices ? plural(u.devices, 'device', 'devices') : '<span class="quiet">none</span>'}</button></td>
       <td><span class="badge ${u.active ? 'ok' : 'idle'}"><span class="dot"></span>${u.active ? 'active' : 'disabled'}</span></td>
       <td style="text-align:right;white-space:nowrap">
         <button class="quiet-btn" data-reset="${u.id}">Reset password</button>
         <button class="quiet-btn" data-toggle="${u.id}" data-active="${u.active}">${u.active ? 'Disable' : 'Enable'}</button>
         <button class="quiet-btn danger-btn" data-del="${u.id}" data-name="${esc(u.name)}" data-user="${esc(u.username)}" data-nsites="${u.sites}">Delete</button>
       </td>
-    </tr>`).join('') : `<tr class="empty-row"><td colspan="6">${EMPS.length ? 'No one matches.' : 'No employee logins yet.'}</td></tr>`;
+    </tr>`).join('') : `<tr class="empty-row"><td colspan="7">${EMPS.length ? 'No one matches.' : 'No employee logins yet.'}</td></tr>`;
 }
 $('crew-search').addEventListener('input', renderCrew);
 
@@ -652,7 +701,15 @@ $('e-user').addEventListener('input', (e) => { const p = e.target.selectionStart
 
 $('staff-body').addEventListener('click', async (e) => {
   const sites = e.target.closest('[data-sites]'), reset = e.target.closest('[data-reset]'),
-        toggle = e.target.closest('[data-toggle]'), del = e.target.closest('[data-del]');
+        toggle = e.target.closest('[data-toggle]'), del = e.target.closest('[data-del]'),
+        dev = e.target.closest('[data-dev]');
+  if (dev) {
+    document.querySelector('#nav [data-tab=devices]').click();
+    $('dev-only-multi').checked = false;
+    $('dev-search').value = dev.dataset.name;
+    await loadDevices();
+    renderDevices();
+  }
   if (sites) {
     document.querySelector('#nav [data-tab=allocate]').click();
     if (mode !== 'emp') setMode('emp');
@@ -786,6 +843,80 @@ $('sync-go').addEventListener('click', async () => {
     loadEntries(); loadSummary();
   } catch (e) { note($('sync-note'), e.message, 'bad'); }
   btn.disabled = false; btn.textContent = 'Write waiting entries to the sheet now';
+});
+
+/* ================================================================ devices */
+let DEVS = [];
+const whenStr = (v) => {
+  if (!v) return '—';
+  const d = new Date(v.replace(' ', 'T') + 'Z');            // D1 stores UTC
+  if (isNaN(d)) return esc(v);
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const time = d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return days >= 1 ? `${time} <span class="quiet">(${plural(days, 'day', 'days')} ago)</span>` : time;
+};
+
+async function loadDevices() {
+  $('dev-body').innerHTML = '<tr class="empty-row"><td colspan="8">Loading…</td></tr>';
+  try {
+    ({ devices: DEVS } = await api('/admin/devices'));
+    renderDevices();
+  } catch (e) { $('dev-body').innerHTML = `<tr class="empty-row"><td colspan="8">${esc(e.message)}</td></tr>`; }
+}
+
+function renderDevices() {
+  const q = norm($('dev-search').value);
+  const onlyMulti = $('dev-only-multi').checked;
+  const counts = new Map();
+  for (const d of DEVS) counts.set(d.employee_id, (counts.get(d.employee_id) || 0) + 1);
+
+  let list = DEVS;
+  if (onlyMulti) list = list.filter((d) => counts.get(d.employee_id) > 1);
+  if (q) list = list.filter((d) => norm(`${d.name} ${d.username} ${d.label || ''}`).includes(q));
+
+  const flagged = [...counts.values()].filter((n) => n > 1).length;
+  $('dev-count').innerHTML = `${plural(DEVS.length, 'device', 'devices')} · `
+    + (flagged ? `<b>${plural(flagged, 'account', 'accounts')} on 2+ devices</b>` : 'nobody on more than one');
+
+  $('dev-body').innerHTML = list.length ? list.map((d) => {
+    const many = counts.get(d.employee_id) > 1;
+    return `
+    <tr class="${many ? 'flag' : ''}">
+      <td>${esc(d.name)}${d.active ? '' : ' <span class="quiet t-12">(disabled)</span>'}
+        ${many ? `<span class="dev-tag" style="margin-left:6px">${counts.get(d.employee_id)} devices</span>` : ''}</td>
+      <td class="mono-cell t-13">${esc(d.username)}</td>
+      <td>${esc(d.label || 'Unknown device')}
+        ${d.shared ? '<span class="dev-tag" style="margin-left:6px" title="This same phone is signed in to another account too">shared phone</span>' : ''}</td>
+      <td><span class="dev-tag ${d.platform === 'android' ? 'android' : ''}">${d.platform === 'android' ? 'app' : 'browser'}</span></td>
+      <td class="mono-cell t-13">${whenStr(d.first_seen)}</td>
+      <td class="mono-cell t-13">${whenStr(d.last_seen)}</td>
+      <td class="mono-cell">${d.logins}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="quiet-btn danger-btn" data-signout="${d.employee_id}" data-name="${esc(d.name)}">Sign out all</button>
+      </td>
+    </tr>`; }).join('')
+    : `<tr class="empty-row"><td colspan="8">${DEVS.length ? 'Nothing matches.' : 'No sign-ins recorded yet. Devices appear here once operators sign in with the new app.'}</td></tr>`;
+}
+$('dev-search').addEventListener('input', renderDevices);
+$('dev-only-multi').addEventListener('change', renderDevices);
+
+async function signOutAll(id, name) {
+  if (!confirm(`Sign ${name} out of every device?\n\n`
+    + '• Every phone they are signed in on is signed out at once\n'
+    + '• The device list for them is cleared\n'
+    + '• Their username and password still work — they can sign in again\n\n'
+    + 'Use this when an account has been shared and you want a clean start.')) return false;
+  try {
+    const d = await api(`/admin/employees/${id}/signout`, { body: {} });
+    note($('dev-note'), `${d.name} signed out of ${plural(d.devices, 'device', 'devices')}.`, 'good');
+    await Promise.all([loadDevices(), loadEmployees()]);
+    renderCrew(); loadSummary();
+    return true;
+  } catch (e) { note($('dev-note'), e.message, 'bad'); return false; }
+}
+$('dev-body').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-signout]');
+  if (b) signOutAll(Number(b.dataset.signout), b.dataset.name);
 });
 
 /* ================================================================ my account */

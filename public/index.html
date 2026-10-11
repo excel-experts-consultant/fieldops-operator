@@ -125,7 +125,12 @@
     go.disabled = true; go.textContent = 'Checking…';
     try {
       const data = await api('/auth/login', {
-        body: { username: document.getElementById('username').value.trim(), password: pw.value },
+        body: {
+          username: document.getElementById('username').value.trim(),
+          password: pw.value,
+          device_id: deviceId(),
+          platform: devicePlatform(),
+        },
       });
       store.token = data.token;
       store.user = data.user;

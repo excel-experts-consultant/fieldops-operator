@@ -164,6 +164,13 @@ app. Operators can have both on one phone.
   the site name typed in, and both work offline.
 - **New operators:** Employees → *Add many at once*. Paste `Name, username` lines; leave passwords
   out and 6-digit ones are generated. Download the CSV straight away — passwords are not shown again.
+- **Who is signed in where:** the **Devices** tab lists every phone each account has signed in on.
+  Accounts on two or more are highlighted, and a handset used by two different accounts is badged
+  *shared phone*. The strip at the top shows how many accounts are on 2+ devices, so you can see it
+  without opening the tab. **Sign out all** clears an account's devices and stops every phone at
+  once; the person's password still works, so they just sign in again on the right phone.
+  The id is made by the app at install and kept in its own storage — it identifies the install, not
+  the handset, so a reinstall or clearing app data shows up as a new device.
 - **Someone leaves:** Employees → **Delete** on their row. Their login stops working at once and their
   sites are released, but the entries they filed are kept and still show their name, in the console and
   in the sheet. Their username becomes free to reuse. To block someone only temporarily, use **Disable**
@@ -201,5 +208,7 @@ changes reach them without a new install.
 | Delete says entries "have not reached the sheet yet" | Google is behind. Wait a minute, or press *Write waiting entries to the sheet now* under Entries, then delete. This guard means deleting someone can never be what loses an entry. |
 | `no such column: employee_name` | The database predates employee deletion. Run `migrate-employee-delete.sql` (or the .bat) once. |
 | `no such column: kind` | The database predates the सर्विस screen. Run `migrate-service-screen.sql` (or the .bat) once. |
+| `no such table: devices` or `no such column: token_version` | The database predates device tracking. Run `migrate-devices.sql` (or the .bat) once. |
+| An operator is signed out unexpectedly | Someone pressed *Sign out all* for them, or their account was disabled. They can sign in again as normal. |
 | `Google Sheets is busy` | Google's per-minute quota was hit. Entries are safe and go in automatically; nothing to do. |
 | APK installs but shows a blank screen | `window.FIELDOPS_API` in `public/js/api.js` is wrong or unset. Fix it, push, rebuild. |

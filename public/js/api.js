@@ -7,6 +7,24 @@ window.FIELDOPS_API = 'https://fieldops-operator.pages.dev';
 
 const BASE = (window.Capacitor || location.protocol === 'file:') ? window.FIELDOPS_API : '';
 
+/* A per-installation id so the superadmin can see when one account is signed in
+   on more than one phone. It identifies the install, not the person: it is made
+   once, kept in this app's own storage, and is not tied to any hardware id.
+   Reinstalling the app or clearing its data produces a new one. */
+const DEVICE_KEY = 'fop_device_id';
+function deviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9._-]{8,64}$/.test(id)) {
+      id = (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2))
+        .replace(/[^A-Za-z0-9._-]/g, '');
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch { return null; }   // private window or storage blocked
+}
+const devicePlatform = () => (window.Capacitor ? 'android' : 'web');
+
 const store = {
   get token() { return localStorage.getItem('fop_token'); },
   set token(v) { v ? localStorage.setItem('fop_token', v) : localStorage.removeItem('fop_token'); },
@@ -23,6 +41,7 @@ async function api(path, options = {}) {
       headers: {
         'content-type': 'application/json',
         ...(store.token ? { authorization: 'Bearer ' + store.token } : {}),
+        ...(deviceId() ? { 'x-device-id': deviceId() } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
