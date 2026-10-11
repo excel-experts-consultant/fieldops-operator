@@ -99,6 +99,11 @@
   .hist .d { font-family: var(--display); font-weight: 600; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 84px; padding-top: 2px; }
   .hist .vals { font-size: 13px; color: #b8cccf; font-variant-numeric: tabular-nums; }
   .hist .badge { flex: none; margin-top: 2px; }
+  .tag.svc {
+    display: inline-block; font-family: var(--display); font-size: 10.5px; font-weight: 700;
+    color: #4fc3dd; border: 1px solid #4fc3dd; border-radius: 3px;
+    padding: 0 4px; margin-right: 5px; vertical-align: 1px;
+  }
 
   /* --- bottom nav --- */
   .tabbar {
@@ -107,8 +112,8 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
   .tabbar button {
-    flex: 1; background: none; border: 0; border-radius: 0; padding: 8px 0 9px;
-    color: #7f9a9f; font-size: 12px; font-family: var(--text); font-weight: 600;
+    flex: 1; min-width: 0; background: none; border: 0; border-radius: 0; padding: 8px 2px 9px;
+    color: #7f9a9f; font-size: 10.5px; font-family: var(--text); font-weight: 600; line-height: 1.2;
     display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative;
   }
   .tabbar button:hover { background: none; color: #cadbdd; }
@@ -165,6 +170,35 @@
     </div>
   </div>
 
+  <!-- ==================================== सर्विस -->
+  <div class="screen" id="screen-service">
+    <h1>सर्विस</h1>
+    <p class="lede" id="svc-sub"></p>
+
+    <div class="queued hidden" id="svc-queued">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="flex:none;margin-top:2px"><path d="M2 6.5a9 9 0 0 1 12 0M4.3 9a5.5 5.5 0 0 1 7.4 0M6.6 11.4a2 2 0 0 1 2.8 0" stroke-linecap="round"/></svg>
+      <span id="svc-queued-text"></span>
+    </div>
+
+    <div class="field">
+      <label class="hi-label" for="s-site">साइट का नाम</label>
+      <input type="text" id="s-site" placeholder="साइट का नाम लिखें" autocomplete="off" list="site-names" enterkeyhint="next">
+    </div>
+    <div class="field">
+      <label class="hi-label" for="s-gen">सर्विस के बाद जनरेटर की रीडिंग</label>
+      <input type="number" inputmode="decimal" step="any" id="s-gen" placeholder="0" enterkeyhint="done">
+    </div>
+
+    <div class="notice hidden" id="svc-msg"></div>
+    <p class="t-12 quiet" style="margin-bottom:80px">
+      नेटवर्क न हो तब भी एंट्री फ़ोन में सेव रहती है और नेटवर्क आते ही अपने आप भेज दी जाती है।
+    </p>
+
+    <div class="submitbar">
+      <div class="inner"><button class="block" id="s-submit">जमा करें</button></div>
+    </div>
+  </div>
+
   <!-- ==================================== मेरी साइट्स (FL Rep) -->
   <div class="screen" id="screen-sites">
     <div class="report-head">
@@ -215,6 +249,10 @@
     <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M8.5 6h2.2a1.3 1.3 0 0 1 1.3 1.3v3.4a1.1 1.1 0 0 0 2.2 0V5.4L12 3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 6h4" stroke-linecap="round"/></svg>
     डीज़ल भरना
   </button>
+  <button data-screen="service">
+    <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.6 2.6a3.4 3.4 0 0 0-4.3 4.3L2.8 10.4a1.4 1.4 0 0 0 2 2l3.5-3.5a3.4 3.4 0 0 0 4.3-4.3l-1.9 1.9-1.6-.4-.4-1.6 1.9-1.9Z" stroke-linejoin="round"/></svg>
+    सर्विस
+  </button>
   <button data-screen="sites">
     <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2.5" width="12" height="11" rx="1.2"/><path d="M2 6h12M6.5 6v7.5" /></svg>
     मेरी साइट्स
@@ -248,6 +286,7 @@ if (me) {
   $('acct-name').textContent = me.name;
   $('acct-user').textContent = 'यूज़रनेम: ' + me.username;
   $('fill-sub').textContent = me.name;
+  $('svc-sub').textContent = me.name;
 }
 
 /* ---------------- navigation ---------------- */
@@ -272,8 +311,11 @@ const queue = {
 };
 function renderQueued() {
   const n = queue.all().length;
-  $('queued').classList.toggle('hidden', !n);
-  $('queued-text').textContent = `${n} एंट्री फ़ोन में रुकी हैं — नेटवर्क आते ही भेजी जाएँगी।`;
+  const text = `${n} एंट्री फ़ोन में रुकी हैं — नेटवर्क आते ही भेजी जाएँगी।`;
+  for (const [box, label] of [['queued', 'queued-text'], ['svc-queued', 'svc-queued-text']]) {
+    $(box).classList.toggle('hidden', !n);
+    $(label).textContent = text;
+  }
   $('pip').classList.toggle('hidden', !n);
   $('pip').textContent = n;
 }
@@ -308,17 +350,17 @@ $('f-site').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.prev
 $('f-diesel').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-gen').focus(); } });
 $('f-gen').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-submit').click(); } });
 
-$('f-submit').addEventListener('click', async () => {
-  const el = $('fill-msg'), btn = $('f-submit');
-  const site = $('f-site').value.trim();
-  const diesel = $('f-diesel').value.trim();
-  const gen = $('f-gen').value.trim();
-  if (!site) { $('f-site').focus(); return note(el, 'साइट का नाम लिखें।', 'bad'); }
-  if (diesel === '') { $('f-diesel').focus(); return note(el, 'डीज़ल भरवाया लिखें।', 'bad'); }
-  if (gen === '') { $('f-gen').focus(); return note(el, 'जनरेटर की रीडिंग लिखें।', 'bad'); }
-
-  const payload = { site, diesel_filled: diesel, generator_reading: gen, client_uuid: newId(), taken_at: Date.now() };
-  const clear = () => { $('f-site').value = ''; $('f-diesel').value = ''; $('f-gen').value = ''; };
+/* Both screens submit the same way — only the fields differ. One path, so a
+   fix to the offline handling applies to डीज़ल भरना and सर्विस alike. */
+async function submitEntry({ btnId, msgId, fields, build }) {
+  const el = $(msgId), btn = $(btnId);
+  const vals = {};
+  for (const f of fields) {
+    vals[f.id] = $(f.id).value.trim();
+    if (vals[f.id] === '') { $(f.id).focus(); return note(el, f.missing, 'bad'); }
+  }
+  const payload = { ...build(vals), client_uuid: newId(), taken_at: Date.now() };
+  const clear = () => fields.forEach((f) => { $(f.id).value = ''; });
   const keepOnPhone = () => {
     queue.add({ ...payload, queued: true });
     renderQueued(); clear();
@@ -336,7 +378,30 @@ $('f-submit').addEventListener('click', async () => {
     else note(el, e.message, 'bad');
   }
   btn.disabled = false; btn.textContent = 'जमा करें';
-});
+}
+
+$('f-submit').addEventListener('click', () => submitEntry({
+  btnId: 'f-submit', msgId: 'fill-msg',
+  fields: [
+    { id: 'f-site', missing: 'साइट का नाम लिखें।' },
+    { id: 'f-diesel', missing: 'डीज़ल भरवाया लिखें।' },
+    { id: 'f-gen', missing: 'जनरेटर की रीडिंग लिखें।' },
+  ],
+  build: (v) => ({ site: v['f-site'], diesel_filled: v['f-diesel'], generator_reading: v['f-gen'] }),
+}));
+
+/* ---------------- सर्विस ---------------- */
+$('s-site').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('s-gen').focus(); } });
+$('s-gen').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('s-submit').click(); } });
+
+$('s-submit').addEventListener('click', () => submitEntry({
+  btnId: 's-submit', msgId: 'svc-msg',
+  fields: [
+    { id: 's-site', missing: 'साइट का नाम लिखें।' },
+    { id: 's-gen', missing: 'सर्विस के बाद जनरेटर की रीडिंग लिखें।' },
+  ],
+  build: (v) => ({ kind: 'service', site: v['s-site'], service_reading: v['s-gen'] }),
+}));
 
 /* ---------------- मेरी साइट्स ---------------- */
 const SKEY = 'fop_sites_' + (me ? me.id : 0);
@@ -402,13 +467,19 @@ $('sites-refresh').addEventListener('click', () => loadSites(true));
 $('sites-search').addEventListener('input', renderSites);
 
 /* ---------------- मेरी एंट्री ---------------- */
+/* One line of values, whichever screen the entry came from. */
+const histVals = (e) => (e.kind === 'service'
+  ? `<span class="tag svc">सर्विस</span> रीडिंग ${esc(e.service_reading ?? '')}`
+  : `डीज़ल ${esc(e.diesel_filled)} · जनरेटर ${esc(e.generator_reading)}`);
+
 async function loadHistory() {
   const wrap = $('hist-list');
   const local = queue.all().slice().reverse().map((q) => `
     <div class="hist">
       <span class="d">${hhmm(q.taken_at)}</span>
       <span class="grow"><div class="truncate">${esc(q.site)}</div>
-        <div class="vals">डीज़ल ${esc(q.diesel_filled)} · जनरेटर ${esc(q.generator_reading)}</div></span>
+        <div class="vals">${histVals({ kind: q.kind, service_reading: q.service_reading,
+          diesel_filled: q.diesel_filled, generator_reading: q.generator_reading })}</div></span>
       <span class="badge warn"><span class="dot"></span>फ़ोन में</span>
     </div>`).join('');
   wrap.innerHTML = local + '<p class="quiet t-13" style="padding-top:12px">लोड हो रहा है…</p>';
@@ -418,7 +489,7 @@ async function loadHistory() {
       <div class="hist">
         <span class="d">${esc(e.entry_stamp.slice(0, 9))}<br>${esc(e.entry_stamp.slice(10, 15))}</span>
         <span class="grow"><div class="truncate">${esc(e.site_text)}</div>
-          <div class="vals">डीज़ल ${esc(e.diesel_filled)} · जनरेटर ${esc(e.generator_reading)}</div></span>
+          <div class="vals">${histVals(e)}</div></span>
         ${e.sheet_status === 'synced'
           ? '<span class="badge ok"><span class="dot"></span>शीट में</span>'
           : '<span class="badge warn"><span class="dot"></span>भेजी जा रही</span>'}

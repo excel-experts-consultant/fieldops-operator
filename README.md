@@ -9,18 +9,20 @@ A second, separate app for operators, on its own Google and Cloudflare accounts.
 
 ## What gets written where
 
-**डीज़ल भरना → `TNK FD` tab**, at the first empty row after the last value in column A:
+Both operator forms write to the **`TNK FD` tab**, at the first empty row after the last value
+in column A. Each writes only its own columns:
 
-| Column | Value |
-|---|---|
-| A | Date and time, e.g. `09 OCT 26 19:02:00` |
-| B | साइट का नाम (typed by the operator) |
-| D | डीज़ल भरवाया |
-| F | जनरेटर की रीडिंग |
-| K | Employee name |
-| L | `RKP-45BT2` (the same code on every entry) |
+| Column | **डीज़ल भरना** | **सर्विस** |
+|---|---|---|
+| A | Date and time, e.g. `09 OCT 26 19:02:00` | Date and time |
+| B | साइट का नाम | साइट का नाम |
+| D | डीज़ल भरवाया | — |
+| F | जनरेटर की रीडिंग | — |
+| J | — | सर्विस के बाद जनरेटर की रीडिंग |
+| K | Employee name | Employee name |
+| L | `RKP-45BT2` | — (no code on a service entry) |
 
-No other column is touched, so formulas in C, E, G–J are safe.
+No other column is touched, so your formulas are safe.
 
 **`FL Rep` tab → मेरी साइट्स screen** (read only). A row is a site when column A holds a number
 (SI No.) and column B a name. A row with only a name in B is a section heading (e.g. *Diesel Route*).
@@ -63,8 +65,17 @@ npx wrangler login
 npx wrangler d1 create fieldops-operator
 ```
 
-Copy the `database_id` it prints into `wrangler.toml`, and put your spreadsheet ID in `SHEET_ID`.
+The project ships `wrangler.toml.example`, not `wrangler.toml`, so that unzipping an update can never
+overwrite your settings. On a first install, copy it:
+
+```
+copy wrangler.toml.example wrangler.toml
+```
+
+Then copy the `database_id` it prints into `wrangler.toml`, and put your spreadsheet ID in `SHEET_ID`.
 Do **not** add `account_id` to `wrangler.toml` — Pages refuses to deploy with it.
+
+If you ever lose those values, `npx wrangler d1 list` prints the database id again.
 
 Load the database tables:
 
@@ -148,6 +159,9 @@ app. Operators can have both on one phone.
 
 ## Day to day
 
+- **The two operator screens:** **डीज़ल भरना** records a fill (columns D and F, plus the code in L).
+  **सर्विस** records the generator reading after a service (column J only, no code). Both need only
+  the site name typed in, and both work offline.
 - **New operators:** Employees → *Add many at once*. Paste `Name, username` lines; leave passwords
   out and 6-digit ones are generated. Download the CSV straight away — passwords are not shown again.
 - **Someone leaves:** Employees → **Delete** on their row. Their login stops working at once and their
@@ -186,5 +200,6 @@ changes reach them without a new install.
 | Operators see no sites | They have none allocated yet, or the sheet's tab is not named `FL Rep`. |
 | Delete says entries "have not reached the sheet yet" | Google is behind. Wait a minute, or press *Write waiting entries to the sheet now* under Entries, then delete. This guard means deleting someone can never be what loses an entry. |
 | `no such column: employee_name` | The database predates employee deletion. Run `migrate-employee-delete.sql` (or the .bat) once. |
+| `no such column: kind` | The database predates the सर्विस screen. Run `migrate-service-screen.sql` (or the .bat) once. |
 | `Google Sheets is busy` | Google's per-minute quota was hit. Entries are safe and go in automatically; nothing to do. |
 | APK installs but shows a blank screen | `window.FIELDOPS_API` in `public/js/api.js` is wrong or unset. Fix it, push, rebuild. |

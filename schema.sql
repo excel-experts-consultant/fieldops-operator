@@ -44,9 +44,12 @@ CREATE TABLE entries (
   -- sheet) still says who filed it after that employee is deleted.
   employee_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
   employee_name     TEXT NOT NULL,
+  -- 'filling' = the डीज़ल भरना screen, 'service' = the सर्विस screen.
+  kind              TEXT NOT NULL DEFAULT 'filling' CHECK (kind IN ('filling','service')),
   site_text         TEXT NOT NULL,
-  diesel_filled     TEXT NOT NULL,    -- column D
-  generator_reading TEXT NOT NULL,    -- column F
+  diesel_filled     TEXT NOT NULL,    -- column D   (filling only, '' on a service entry)
+  generator_reading TEXT NOT NULL,    -- column F   (filling only, '' on a service entry)
+  service_reading   TEXT,             -- column J   (service only)
   entry_stamp       TEXT NOT NULL,    -- column A, e.g. "09 OCT 26 19:02:00"
   client_uuid       TEXT UNIQUE,      -- offline-safe idempotency key from the phone
   sheet_status      TEXT NOT NULL DEFAULT 'pending' CHECK (sheet_status IN ('pending','synced')),

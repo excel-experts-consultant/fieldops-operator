@@ -465,7 +465,8 @@ async function flushEntries(env) {
   try {
     for (let round = 0; round < 5; round++) {
       const { results } = await env.DB.prepare(`
-        SELECT id, site_text, diesel_filled, generator_reading, entry_stamp, employee_name
+        SELECT id, kind, site_text, diesel_filled, generator_reading, service_reading,
+               entry_stamp, employee_name
         FROM entries
         WHERE sheet_status = 'pending' ORDER BY id LIMIT ?
       `).bind(BATCH).all();
@@ -475,14 +476,22 @@ async function flushEntries(env) {
       const data = [];
       results.forEach((r, i) => {
         const row = start + i;
-        const cells = {
-          A: r.entry_stamp,
-          B: asSheetText(r.site_text),
-          D: r.diesel_filled,
-          F: r.generator_reading,
-          K: asSheetText(r.employee_name),
-          L: asSheetText(code),
-        };
+        // A service entry writes only its own reading, and carries no code.
+        const cells = r.kind === 'service'
+          ? {
+            A: r.entry_stamp,
+            B: asSheetText(r.site_text),
+            J: r.service_reading,
+            K: asSheetText(r.employee_name),
+          }
+          : {
+            A: r.entry_stamp,
+            B: asSheetText(r.site_text),
+            D: r.diesel_filled,
+            F: r.generator_reading,
+            K: asSheetText(r.employee_name),
+            L: asSheetText(code),
+          };
         for (const [col, value] of Object.entries(cells)) {
           data.push({ range: `${tabRef(tab)}!${col}${row}`, values: [[value]] });
         }
@@ -862,8 +871,8 @@ async function route({ path, method, body, url, request, env, ctx }) {
     if (path === '/admin/entries' && method === 'GET') {
       const emp = Number(url.searchParams.get('employee_id')) || null;
       const { results } = await env.DB.prepare(`
-        SELECT id, site_text, diesel_filled, generator_reading, entry_stamp,
-               sheet_status, sheet_row, created_at, employee_name
+        SELECT id, kind, site_text, diesel_filled, generator_reading, service_reading,
+               entry_stamp, sheet_status, sheet_row, created_at, employee_name
         FROM entries
         WHERE (?1 IS NULL OR employee_id = ?1)
         ORDER BY id DESC LIMIT 300
@@ -914,14 +923,21 @@ async function route({ path, method, body, url, request, env, ctx }) {
 
     /* The डीज़ल भरना form. Saved first, written to the sheet straight after. */
     if (path === '/emp/entry' && method === 'POST') {
+      const kind = body.kind === 'service' ? 'service' : 'filling';
       const site = String(body.site || '').trim().slice(0, 200);
-      const diesel = String(body.diesel_filled ?? '').trim();
-      const gen = String(body.generator_reading ?? '').trim();
+      const diesel = kind === 'service' ? '' : String(body.diesel_filled ?? '').trim();
+      const gen = kind === 'service' ? '' : String(body.generator_reading ?? '').trim();
+      const service = kind === 'service' ? String(body.service_reading ?? '').trim() : null;
       const NUM = /^-?\d+(\.\d+)?$/;
       if (!site) return fail('साइट का नाम लिखें');
-      if (!diesel) return fail('डीज़ल भरवाया लिखें');
-      if (!gen) return fail('जनरेटर की रीडिंग लिखें');
-      if (!NUM.test(diesel) || !NUM.test(gen)) return fail('रीडिंग में सिर्फ़ नंबर लिखें');
+      if (kind === 'service') {
+        if (!service) return fail('सर्विस के बाद जनरेटर की रीडिंग लिखें');
+        if (!NUM.test(service)) return fail('रीडिंग में सिर्फ़ नंबर लिखें');
+      } else {
+        if (!diesel) return fail('डीज़ल भरवाया लिखें');
+        if (!gen) return fail('जनरेटर की रीडिंग लिखें');
+        if (!NUM.test(diesel) || !NUM.test(gen)) return fail('रीडिंग में सिर्फ़ नंबर लिखें');
+      }
 
       if (body.client_uuid) {
         const dupe = await env.DB.prepare('SELECT id, sheet_status FROM entries WHERE client_uuid = ?')
@@ -935,9 +951,11 @@ async function route({ path, method, body, url, request, env, ctx }) {
       const when = body.queued && taken > now - 7 * 864e5 && taken < now + 5 * 60e3 ? new Date(taken) : new Date(now);
 
       const row = await env.DB.prepare(`
-        INSERT INTO entries (employee_id, employee_name, site_text, diesel_filled, generator_reading, entry_stamp, client_uuid)
-        VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
-      `).bind(emp.id, emp.name, site, diesel, gen, stampAt(when, env.TIMEZONE),
+        INSERT INTO entries
+          (employee_id, employee_name, kind, site_text, diesel_filled, generator_reading,
+           service_reading, entry_stamp, client_uuid)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+      `).bind(emp.id, emp.name, kind, site, diesel, gen, service, stampAt(when, env.TIMEZONE),
               body.client_uuid ? String(body.client_uuid) : null).first();
 
       const r = await flushEntries(env);
@@ -948,7 +966,8 @@ async function route({ path, method, body, url, request, env, ctx }) {
 
     if (path === '/emp/entries' && method === 'GET') {
       const { results } = await env.DB.prepare(`
-        SELECT id, site_text, diesel_filled, generator_reading, entry_stamp, sheet_status
+        SELECT id, kind, site_text, diesel_filled, generator_reading, service_reading,
+               entry_stamp, sheet_status
         FROM entries WHERE employee_id = ? ORDER BY id DESC LIMIT 50
       `).bind(emp.id).all();
       return json({ ok: true, entries: results });
