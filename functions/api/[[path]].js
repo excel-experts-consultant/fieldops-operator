@@ -595,8 +595,14 @@ export async function onRequest(context) {
     return new Response(null, {
       headers: {
         'access-control-allow-origin': '*',
-        'access-control-allow-headers': 'content-type, authorization',
+        // EVERY header public/js/api.js sends must be listed here. The Android
+        // app calls this API from another origin, so the browser asks first with
+        // an OPTIONS request; a header missing from this list makes the real
+        // request fail before it is sent, which the app can only report as
+        // "no network".
+        'access-control-allow-headers': 'content-type, authorization, x-device-id',
         'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'access-control-max-age': '86400',   // ask once a day, not per request
       },
     });
   }
