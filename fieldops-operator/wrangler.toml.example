@@ -1,0 +1,31 @@
+name = "fieldops-operator"
+pages_build_output_dir = "public"
+compatibility_date = "2026-01-01"
+
+[vars]
+# The spreadsheet that holds both tabs below.
+SHEET_ID = "PUT_YOUR_SPREADSHEET_ID_HERE"
+
+# Where the डीज़ल भरना form writes:  A time · B site · D diesel · F generator · K employee · L code
+SHEET_TAB = "TNK FD"
+
+# The report employees see, read-only:  B site · C Service · D Tank Diesel Left · E DSL% · F Battery · G Fuel Motor
+FLREP_TAB = "FL Rep"
+
+# Written into column L on every entry.
+ENTRY_CODE = "RKP-45BT2"
+
+# How long (seconds) one read of FL Rep is shared by everyone before it is fetched again.
+# Google allows the service account 60 reads a minute in total, so keep this at 60 or more.
+FLREP_TTL_SECONDS = "60"
+
+TIMEZONE = "Asia/Kolkata"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fieldops-operator"
+database_id = "PUT_YOUR_D1_DATABASE_ID_HERE"
+
+# Secrets are NOT set here. Run these once:
+#   npx wrangler pages secret put SESSION_SECRET --project-name YOUR_PROJECT
+#   npx wrangler pages secret put GOOGLE_SERVICE_ACCOUNT --project-name YOUR_PROJECT < secret.txt

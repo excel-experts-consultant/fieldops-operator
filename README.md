@@ -211,5 +211,6 @@ changes reach them without a new install.
 | `no such table: devices` or `no such column: token_version` | The database predates device tracking. Run `migrate-devices.sql` (or the .bat) once. |
 | An operator is signed out unexpectedly | Someone pressed *Sign out all* for them, or their account was disabled. They can sign in again as normal. |
 | `Google Sheets is busy` | Google's per-minute quota was hit. Entries are safe and go in automatically; nothing to do. |
+| Entries stay "waiting" for many minutes | Find out which it is:<br>`npx wrangler d1 execute fieldops-operator --remote --command="SELECT * FROM kv WHERE key='sync'"`<br>A message there is Google refusing (sharing, SHEET_ID or tab name). Nothing there, plus a row in `locks`, means a write never started — clear it with `...--command="DELETE FROM locks"`. |
 | APK installs but shows a blank screen | `window.FIELDOPS_API` in `public/js/api.js` is wrong or unset. Fix it, push, rebuild. |
 | The app says "नेटवर्क नहीं है" on sign-in but the website works | The phone's request was blocked before it was sent. Any header added to `public/js/api.js` must also be listed in `access-control-allow-headers` in the API's OPTIONS handler — the website never shows this because it calls its own origin. Fix it and **redeploy**; no new APK is needed. |

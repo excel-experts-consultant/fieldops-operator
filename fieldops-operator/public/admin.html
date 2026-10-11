@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FieldOps Operator — superadmin</title>
+<link rel="icon" href="./icon-192.png">
+<link rel="stylesheet" href="./css/app.css">
+<style>
+  .shell { display: grid; grid-template-columns: 224px 1fr; min-height: 100vh; }
+
+  /* ---- sidebar ---- */
+  .rail {
+    background: var(--ink-900); color: #cadbdd;
+    display: flex; flex-direction: column; padding: 18px 0;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .rail .mark { display: flex; align-items: center; gap: 9px; padding: 0 18px 22px; font-family: var(--display); font-weight: 700; font-size: 17px; letter-spacing: -0.02em; color: #fff; }
+  .rail .mark small { font-weight: 600; font-size: 12px; color: var(--dim); }
+  .rail nav { display: flex; flex-direction: column; gap: 1px; padding: 0 10px; }
+  .rail nav button {
+    display: flex; align-items: center; gap: 10px;
+    background: none; border: 0; border-radius: var(--r-sm);
+    color: #92abaf; padding: 9px 10px; font-size: 13.5px; text-align: left; width: 100%;
+  }
+  .rail nav button:hover { background: var(--ink-800); color: #e4edee; }
+  .rail nav button[aria-selected=true] { background: var(--ink-750); color: #fff; box-shadow: inset 2px 0 0 var(--amber); }
+  .rail nav button svg { flex: none; opacity: .85; }
+  .rail nav button .tally { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--amber); }
+  .rail .who { margin-top: auto; padding: 16px 18px 0; border-top: 1px solid var(--ink-700); }
+  .rail .who .name { font-family: var(--display); font-weight: 600; font-size: 13.5px; color: #e4edee; }
+  .rail .who .role { font-size: 11.5px; color: var(--dim); margin-bottom: 6px; }
+  .rail .who .quiet-btn { padding-left: 0; display: block; }
+
+  /* ---- content ---- */
+  .content { min-width: 0; }
+  .strip {
+    display: flex; flex-wrap: wrap; background: #fff; border-bottom: 1px solid var(--mist-200);
+    position: sticky; top: 0; z-index: 3;
+  }
+  .stat { padding: 13px 22px; border-right: 1px solid var(--mist-100); min-width: 118px; }
+  .stat .k { font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: .03em; color: var(--dim-light); }
+  .stat .v { font-family: var(--display); font-size: 23px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .stat .v.small { font-size: 15px; line-height: 1.9; }
+  .stat.alert .v { color: var(--bad); }
+
+  .page { padding: 26px 26px 130px; max-width: 1280px; }
+  .page-head { margin-bottom: 18px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  .page-head p { color: var(--dim-light); font-size: 13.5px; margin: 5px 0 0; max-width: 72ch; }
+  section { display: none; }
+  section.on { display: block; }
+
+  /* ---- allocate ---- */
+  .seg { display: inline-flex; border: 1px solid var(--mist-200); border-radius: var(--r-sm); background: #fff; overflow: hidden; margin-left: auto; }
+  .seg button { background: none; border: 0; border-radius: 0; color: var(--dim-light); padding: 8px 14px; font-size: 13px; }
+  .seg button + button { border-left: 1px solid var(--mist-200); }
+  .seg button[aria-pressed=true] { background: var(--ink-900); color: #fff; }
+
+  .composer { display: grid; grid-template-columns: 360px 1fr; }
+  .composer .left { border-right: 1px solid var(--mist-100); min-width: 0; }
+  .composer .right { min-width: 0; }
+  .col-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--mist-100); }
+  .col-head h3 { margin: 0; }
+  .col-head p { margin: 3px 0 0; font-size: 12.5px; color: var(--dim-light); }
+  .tools { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--mist-100); background: #fbfcfc; flex-wrap: wrap; }
+  .tools input[type=search] { flex: 1; min-width: 160px; padding: 8px 10px; font-size: 13px; }
+  .tools select { width: auto; max-width: 210px; padding: 8px 32px 8px 10px; font-size: 13px; }
+  .list { max-height: calc(100vh - 330px); min-height: 320px; overflow: auto; }
+
+  .pick.choice { border-left: 3px solid transparent; }
+  .pick.choice.sel { background: var(--amber-soft); border-left-color: var(--amber); }
+  .pick .sub { color: var(--dim-light); font-size: 12px; }
+  .pick .count { margin-left: auto; font-family: var(--display); font-size: 11px; font-weight: 600; color: var(--dim-light); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pick .count.zero { color: var(--mist-300); }
+  .pick.off { opacity: .55; }
+  .grp-row {
+    position: sticky; top: 0; z-index: 1;
+    font-family: var(--display); font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    color: #6b5a12; background: #fff7cc; padding: 6px 14px; border-bottom: 1px solid #f1e4a3;
+  }
+  .more-row {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 10px 14px; font-size: 12.5px; color: var(--dim-light);
+    border-top: 1px solid var(--line); background: var(--card-2);
+  }
+  .more-row b { color: var(--ink); }
+  .empty-right { padding: 60px 24px; text-align: center; color: var(--dim-light); font-size: 13.5px; }
+  .flagged { padding: 10px 14px; border-top: 1px solid var(--mist-100); background: #fff9f2; font-size: 12.5px; }
+  .flagged b { font-family: var(--display); }
+
+  .sendbar {
+    position: fixed; bottom: 0; left: 224px; right: 0; z-index: 4;
+    background: var(--ink-900); color: #cadbdd; border-top: 1px solid var(--ink-700);
+    display: flex; align-items: center; gap: 18px; padding: 12px 26px;
+  }
+  .sendbar .sum { font-family: var(--display); font-size: 14px; }
+  .sendbar .sum b { color: var(--amber); font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sendbar .detail { font-size: 12.5px; color: var(--dim); }
+  .sendbar .msg { font-size: 12.5px; margin-left: auto; }
+  .sendbar .msg.good { color: #6fd6a1; }
+  .sendbar .msg.bad { color: #f09a93; }
+  .sendbar .btns { display: flex; gap: 8px; }
+  .sendbar .ghost { border-color: var(--ink-600); color: #cadbdd; }
+  .sendbar .ghost:hover { background: var(--ink-800); }
+
+  /* ---- staff / entries ---- */
+  .split-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .mono-cell { font-variant-numeric: tabular-nums; }
+  .empty-row td { color: var(--dim-light); text-align: center; padding: 30px; }
+  textarea.bulk { min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .progress { height: 6px; background: var(--mist-100); border-radius: 3px; overflow: hidden; margin: 10px 0; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .2s; }
+  #bulk-note { white-space: pre-line; }
+  .bulk-out { max-height: 240px; overflow: auto; border: 1px solid var(--mist-200); border-radius: var(--r-sm); margin-top: 10px; }
+  .bulk-out table td, .bulk-out table th { padding: 6px 10px; font-size: 12.5px; }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--mist-100); }
+  .toolbar input[type=search], .toolbar select { width: auto; min-width: 220px; padding: 8px 10px; font-size: 13px; }
+
+  @media (max-width: 1000px) {
+    .shell { grid-template-columns: 1fr; } .rail { position: static; height: auto; }
+    .composer, .split-2 { grid-template-columns: 1fr; }
+    .composer .left { border-right: 0; border-bottom: 1px solid var(--mist-100); }
+    .sendbar { left: 0; flex-wrap: wrap; }
+  }
+
+  /* ---- my account dialog ---- */
+  .modal { position: fixed; inset: 0; z-index: 20; display: none; background: rgba(11, 26, 30, .55); padding: 40px 20px; overflow: auto; }
+  .modal.on { display: block; }
+  .modal .sheet { background: #fff; border-radius: var(--r); max-width: 440px; margin: 0 auto; box-shadow: 0 18px 50px rgba(0,0,0,.28); overflow: hidden; }
+  .modal .sheet-head { padding: 18px 20px 14px; border-bottom: 1px solid var(--mist-100); }
+  .modal .sheet-head p { margin: 4px 0 0; font-size: 13px; color: var(--dim-light); }
+  .modal .sheet-body { padding: 18px 20px; }
+  .modal .sheet-foot { display: flex; padding: 14px 20px; border-top: 1px solid var(--mist-100); background: var(--mist-50); }
+  .modal .sheet-foot .spring { margin-left: auto; }
+  .acct-block { border-top: 1px solid var(--mist-100); padding-top: 14px; margin-top: 16px; }
+  /* `button.quiet-btn` in app.css would otherwise win on specificity */
+  .pager {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 16px; border-top: 1px solid var(--mist-100); background: #fbfcfc;
+  }
+  .pager .spring { margin-left: auto; }
+  .pager button[disabled] { opacity: .35; cursor: not-allowed; }
+  .kind {
+    font-family: var(--display); font-size: 11px; font-weight: 600;
+    padding: 2px 7px; border-radius: 20px; white-space: nowrap;
+    background: var(--amber-soft); color: #8a5c05;
+  }
+  .kind.svc { background: rgba(53,160,184,.13); color: #1d6b7e; }
+  button.quiet-btn.warn-btn { color: var(--warn); font-weight: 700; }
+  .dev-tag {
+    font-family: var(--display); font-size: 11px; font-weight: 600;
+    padding: 2px 7px; border-radius: 20px; white-space: nowrap;
+    background: var(--mist-100); color: var(--ink-700);
+  }
+  .dev-tag.android { background: rgba(46,158,104,.12); color: #1d6b48; }
+  tr.flag td { background: #fff9ec; }
+  tr.flag:hover td { background: #fff4de; }
+  button.quiet-btn.danger-btn { color: var(--bad); margin-left: 10px; }
+  button.quiet-btn.danger-btn:hover { color: #fff; background: var(--bad); }
+  .acct-title { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--dim-light); margin-bottom: 10px; }
+</style>
+</head>
+<body class="console">
+
+<div class="shell">
+  <aside class="rail">
+    <div class="mark">
+      <svg width="19" height="19" viewBox="0 0 20 20" aria-hidden="true"><rect width="20" height="20" rx="4" fill="#f5a524"/><path d="M6 14V6h7M6 10h5" stroke="#0b1a1e" stroke-width="2" stroke-linecap="round"/></svg>
+      FieldOps <small>Operator</small>
+    </div>
+    <nav id="nav">
+      <button data-tab="allocate" aria-selected="true">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 14s4.5-4 4.5-7.5a4.5 4.5 0 1 0-9 0C3.5 10 8 14 8 14Z"/><circle cx="8" cy="6.5" r="1.6"/></svg>
+        Allocate sites</button>
+      <button data-tab="staff">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="5.5" r="2.6"/><path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/></svg>
+        Employees<span class="tally" id="tally-emp"></span></button>
+      <button data-tab="entries">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 12.5 6 8l3 3 4.5-6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Entries<span class="tally" id="tally-pending"></span></button>
+      <button data-tab="devices">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4.5" y="1.5" width="7" height="13" rx="1.5"/><path d="M7 12.8h2" stroke-linecap="round"/></svg>
+        Devices<span class="tally" id="tally-dev"></span></button>
+    </nav>
+    <div class="who">
+      <div class="name" id="who"></div>
+      <div class="role">Superadmin</div>
+      <button class="quiet-btn" id="acct-open">My account</button>
+      <button class="quiet-btn" onclick="signOut()">Sign out</button>
+    </div>
+  </aside>
+
+  <div class="content">
+    <div class="strip">
+      <div class="stat"><div class="k">Employees</div><div class="v" id="s-emp">—</div></div>
+      <div class="stat"><div class="k">Sites in FL Rep</div><div class="v" id="s-sites">—</div></div>
+      <div class="stat"><div class="k">Entries today</div><div class="v" id="s-today">—</div></div>
+      <div class="stat" id="s-pending-wrap"><div class="k">Waiting for sheet</div><div class="v" id="s-pending">—</div></div>
+      <div class="stat"><div class="k">FL Rep read at</div><div class="v small" id="s-flrep">—</div></div>
+      <div class="stat" id="s-multi-wrap"><div class="k">On 2+ devices</div><div class="v" id="s-multi">—</div></div>
+      <div class="stat"><div class="k">Column L code</div><div class="v small" id="s-code">—</div></div>
+    </div>
+
+    <div class="page">
+      <!-- ============================================ allocate -->
+      <section id="allocate" class="on">
+        <div class="page-head">
+          <div>
+            <h1>Allocate sites</h1>
+            <p>Operators see only the FL Rep sites ticked for them, with the sheet's live readings and colours.</p>
+          </div>
+          <div class="seg" role="group" aria-label="Allocate by">
+            <button id="mode-emp" aria-pressed="true">By employee</button>
+            <button id="mode-site" aria-pressed="false">By site</button>
+          </div>
+        </div>
+        <div class="notice bad hidden" id="alloc-err"></div>
+
+        <div class="panel">
+          <div class="composer">
+            <div class="left">
+              <div class="col-head"><h3 id="left-title">Employees</h3><p id="left-sub"></p></div>
+              <div class="tools">
+                <input type="search" id="left-search" placeholder="Search">
+                <select id="left-group" class="hidden"></select>
+              </div>
+              <div class="list" id="left-list"></div>
+            </div>
+            <div class="right">
+              <div class="col-head"><h3 id="right-title">Pick an employee</h3><p id="right-sub">Their sites appear here to tick.</p></div>
+              <div class="tools" id="right-tools">
+                <input type="search" id="right-search" placeholder="Search">
+                <select id="right-group"></select>
+                <button class="ghost small" id="tick-shown">Tick all shown</button>
+                <button class="ghost small" id="untick-shown">Untick all shown</button>
+              </div>
+              <div class="list" id="right-list"><div class="empty-right">Pick someone on the left.</div></div>
+              <div class="flagged hidden" id="flagged"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================ employees -->
+      <section id="staff">
+        <div class="page-head">
+          <div>
+            <h1>Employees</h1>
+            <p>The usernames and passwords operators use to sign in to the app. Usernames are always lowercase.</p>
+          </div>
+        </div>
+        <div class="split-2">
+          <div class="panel">
+            <div class="panel-head"><h3>Add one</h3></div>
+            <div class="panel-body">
+              <div class="field"><label for="e-name">Full name</label><input type="text" id="e-name"></div>
+              <div class="field"><label for="e-user">Username</label><input type="text" id="e-user" autocapitalize="none" spellcheck="false"><div class="help">Letters, numbers, dot, dash or underscore. No spaces.</div></div>
+              <div class="field"><label for="e-pass">Password</label><input type="text" id="e-pass"><div class="help">At least 6 characters.</div></div>
+              <div class="field"><label for="e-phone">Phone</label><input type="text" id="e-phone" placeholder="Optional"></div>
+              <div class="notice hidden" id="staff-note"></div>
+              <button id="staff-go">Create login</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h3>Add many at once</h3>
+              <p>One person per line: <b>Full name, username, password, phone</b>. Leave the password out and a 6-digit one is made up for you. Paste straight from a sheet — commas or tabs both work.</p>
+            </div>
+            <div class="panel-body">
+              <textarea class="bulk" id="bulk-text" placeholder="Ram Kumar, ramk, 482913, 9876543210&#10;Shyam Lal, shyaml&#10;Sita Devi, sitad, sita2026"></textarea>
+              <div class="progress hidden" id="bulk-progress"><i></i></div>
+              <div class="notice hidden" id="bulk-note" style="margin-top:10px"></div>
+              <div class="row" style="margin-top:10px">
+                <button id="bulk-go">Create logins</button>
+                <button class="ghost hidden" id="bulk-csv">Download usernames &amp; passwords (CSV)</button>
+              </div>
+              <div class="bulk-out hidden" id="bulk-out"></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="toolbar">
+            <h3 style="margin-right:auto">Crew <span class="quiet t-13" id="crew-count"></span></h3>
+            <input type="search" id="crew-search" placeholder="Search name or username">
+          </div>
+          <div class="panel-body flush">
+            <div class="table-scroll" style="max-height:60vh">
+              <table>
+                <thead><tr><th>Name</th><th>Username</th><th>Phone</th><th>Sites</th><th>Devices</th><th>Status</th><th></th></tr></thead>
+                <tbody id="staff-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================ entries -->
+      <section id="entries">
+        <div class="page-head">
+          <div>
+            <h1>Entries</h1>
+            <p>Every डीज़ल भरना entry, newest first. Each is saved here the moment it is submitted, then written to the sheet — usually within a second.</p>
+          </div>
+        </div>
+        <div class="notice hidden" id="sync-note"></div>
+        <div class="panel">
+          <div class="toolbar">
+            <select id="ent-emp"><option value="">All employees</option></select>
+            <select id="ent-kind">
+              <option value="">Both screens</option>
+              <option value="filling">डीज़ल भरना</option>
+              <option value="service">सर्विस</option>
+            </select>
+            <label class="t-12 quiet" for="ent-from">From</label>
+            <input type="date" id="ent-from" style="width:auto;min-width:0">
+            <label class="t-12 quiet" for="ent-to">To</label>
+            <input type="date" id="ent-to" style="width:auto;min-width:0">
+            <input type="search" id="ent-q" placeholder="Site or employee" style="min-width:170px">
+            <label class="row t-13" style="gap:7px;cursor:pointer">
+              <input type="checkbox" id="ent-pending" style="width:auto"> Only waiting
+            </label>
+            <button class="ghost small" id="ent-reset">Reset</button>
+            <span style="margin-left:auto"></span>
+            <button class="ghost" id="sync-go">Write waiting entries to the sheet now</button>
+          </div>
+          <div class="panel-body flush">
+            <div class="table-scroll" style="max-height:66vh">
+              <table>
+                <thead><tr><th>Time (A)</th><th>Employee (K)</th><th>Screen</th><th>Site (B)</th><th>डीज़ल भरवाया (D)</th><th>जनरेटर की रीडिंग (F)</th><th>सर्विस के बाद (J)</th><th>Sheet</th></tr></thead>
+                <tbody id="ent-body"></tbody>
+              </table>
+            </div>
+          </div>
+            <div class="pager">
+              <button class="ghost small" id="ent-prev">&larr; Newer</button>
+              <span class="t-13" id="ent-count">&mdash;</span>
+              <button class="ghost small" id="ent-next">Older &rarr;</button>
+              <span class="spring"></span>
+              <label class="t-12 quiet" for="ent-size">Rows</label>
+              <select id="ent-size" style="width:auto">
+                <option>50</option><option selected>100</option><option>200</option>
+              </select>
+            </div>
+        </div>
+      </section>
+
+      <!-- ============================================ devices -->
+      <section id="devices">
+        <div class="page-head">
+          <div>
+            <h1>Devices</h1>
+            <p>One row per phone an account has signed in on. The id is made by the app at install
+               and kept in its own storage, so reinstalling counts as a new device.</p>
+          </div>
+        </div>
+        <div class="notice hidden" id="dev-note"></div>
+        <div class="panel">
+          <div class="toolbar">
+            <input type="search" id="dev-search" placeholder="Search name, username or device">
+            <label class="row t-13" style="gap:7px;cursor:pointer">
+              <input type="checkbox" id="dev-only-multi" style="width:auto">
+              Only accounts on 2 or more devices
+            </label>
+            <span class="t-12 quiet" id="dev-flagged"></span>
+          </div>
+          <div class="panel-body flush">
+            <div class="table-scroll" style="max-height:66vh">
+              <table>
+                <thead><tr><th>Employee</th><th>Username</th><th>Device</th><th>App</th><th>First seen</th><th>Last seen</th><th>Logins</th><th></th></tr></thead>
+                <tbody id="dev-body"></tbody>
+              </table>
+            </div>
+          </div>
+            <div class="pager">
+              <button class="ghost small" id="dev-prev">&larr; Newer</button>
+              <span class="t-13" id="dev-count">&mdash;</span>
+              <button class="ghost small" id="dev-next">Older &rarr;</button>
+            </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="sendbar" id="sendbar">
+  <div>
+    <div class="sum" id="send-sum">Nothing picked</div>
+    <div class="detail" id="send-detail">Pick someone on the left to start.</div>
+  </div>
+  <span class="msg" id="send-msg"></span>
+  <div class="btns">
+    <button class="ghost hidden" id="undo-go">Undo changes</button>
+    <button id="save-go" disabled>Save</button>
+  </div>
+</div>
+
+<!-- ============================================ my account -->
+<div class="modal" id="acct-modal">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h3>My account</h3>
+      <p>Your current password confirms either change.</p>
+    </div>
+    <div class="sheet-body">
+      <label for="pw-current">Current password</label>
+      <input type="password" id="pw-current" autocomplete="current-password" style="margin:4px 0 18px">
+      <div class="acct-block">
+        <div class="acct-title">Name and username</div>
+        <label for="ac-name">Display name</label>
+        <input type="text" id="ac-name" style="margin:4px 0 12px">
+        <label for="ac-user">Username</label>
+        <input type="text" id="ac-user" spellcheck="false" autocapitalize="none" style="margin:4px 0 12px">
+        <button id="ac-go">Save name and username</button>
+        <div class="notice hidden" id="ac-note" style="margin-top:12px"></div>
+      </div>
+      <div class="acct-block">
+        <div class="acct-title">Password</div>
+        <label for="pw-new">New password</label>
+        <input type="password" id="pw-new" autocomplete="new-password" style="margin:4px 0 12px">
+        <label for="pw-again">Repeat new password</label>
+        <input type="password" id="pw-again" autocomplete="new-password" style="margin:4px 0 12px">
+        <button id="pw-go">Update password</button>
+        <div class="notice hidden" id="pw-note" style="margin-top:12px"></div>
+      </div>
+    </div>
+    <div class="sheet-foot"><span class="spring"></span><button class="ghost" id="acct-close">Close</button></div>
+  </div>
+</div>
+
+<script src="./js/api.js"></script>
+<script>
+const me = requireRole('admin');
+const $ = (id) => document.getElementById(id);
+const note = (el, text, kind) => { el.className = 'notice ' + (kind || ''); el.textContent = text; el.classList.remove('hidden'); };
+const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const hhmm = (ms) => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+/* One timer per input: a keystroke cancels the pending draw, so holding a key
+   down costs one render instead of one per character. */
+const debounce = (fn, ms = 300) => { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; };
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+if (me) $('who').textContent = me.name;
+
+let EMPS = [];        // employees with their site counts
+let SITES = [];       // FL Rep sites: { sl, name, code, group, holders }
+let GROUPS = [];
+
+/* ---------------- tabs ---------------- */
+let tab = 'allocate';
+$('nav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-tab]');
+  if (!btn) return;
+  if (tab === 'allocate' && btn.dataset.tab !== 'allocate' && dirty() && !confirm('You have unsaved site changes. Leave without saving?')) return;
+  tab = btn.dataset.tab;
+  document.querySelectorAll('#nav button').forEach((b) => b.setAttribute('aria-selected', b === btn));
+  document.querySelectorAll('section').forEach((s) => s.classList.toggle('on', s.id === tab));
+  $('sendbar').classList.toggle('hidden', tab !== 'allocate');
+  if (tab === 'staff') renderCrew();
+  if (tab === 'entries') loadEntries();
+  if (tab === 'devices') loadDevices();
+  if (tab === 'allocate') { renderLeft(); renderRight(); }
+});
+window.addEventListener('beforeunload', (e) => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------------- summary strip ---------------- */
+async function loadSummary() {
+  try {
+    const d = await api('/admin/summary');
+    $('s-emp').textContent = d.employees;
+    $('s-sites').textContent = d.sites ?? '—';
+    $('s-today').textContent = d.entries_today;
+    $('s-pending').textContent = d.pending;
+    $('s-pending-wrap').classList.toggle('alert', d.pending > 0 && !!d.sync?.error);
+    $('tally-pending').textContent = d.pending || '';
+    $('s-flrep').textContent = d.report_fetched_at ? hhmm(d.report_fetched_at) : '—';
+    $('s-multi').textContent = d.multi_device ?? 0;
+    $('s-multi-wrap').classList.toggle('alert', (d.multi_device || 0) > 0);
+    $('tally-dev').textContent = d.multi_device || '';
+    $('s-code').textContent = d.entry_code;
+    if (d.report_error) note($('alloc-err'), 'Could not read FL Rep: ' + d.report_error, 'bad');
+    const sync = d.sync;
+    if (d.pending && sync?.error) note($('sync-note'), `${plural(d.pending, 'entry is', 'entries are')} waiting. Last sheet write failed at ${hhmm(sync.at)}: ${sync.error}`, 'bad');
+    else if (d.pending) note($('sync-note'), `${plural(d.pending, 'entry is', 'entries are')} on the way to the sheet.`, '');
+    else $('sync-note').classList.add('hidden');
+  } catch (e) { note($('alloc-err'), e.message, 'bad'); }
+}
+
+async function loadEmployees() {
+  const d = await api('/admin/employees');
+  EMPS = d.employees;
+  $('tally-emp').textContent = EMPS.filter((u) => u.active).length || '';
+  const sel = $('ent-emp'), keep = sel.value;
+  sel.innerHTML = '<option value="">All employees</option>' + EMPS.map((u) => `<option value="${u.id}">${esc(u.name)} (${esc(u.username)})</option>`).join('');
+  sel.value = keep;
+}
+
+async function loadSites(refresh) {
+  const d = await api('/admin/sites' + (refresh ? '?refresh=1' : ''));
+  SITES = d.sites;
+  GROUPS = [...new Set(SITES.map((s) => s.group).filter(Boolean))];
+  const opts = '<option value="">All sections</option>' + GROUPS.map((g) => `<option>${esc(g)}</option>`).join('');
+  for (const id of ['left-group', 'right-group']) { const k = $(id).value; $(id).innerHTML = opts; $(id).value = k; }
+  if (d.error) note($('alloc-err'), 'Showing the last copy of FL Rep — reading it again failed: ' + d.error, 'bad');
+}
+
+/* ================================================================ allocate */
+let mode = 'emp';        // 'emp': pick an employee, tick sites · 'site': pick a site, tick employees
+let sel = null;          // employee id, or site name
+let saved = new Set();   // what is stored now (site names, or employee ids)
+let ticked = new Set();  // what the superadmin has ticked
+let flagged = { missing: [], renamed: [] };
+
+const dirty = () => sel !== null && (saved.size !== ticked.size || [...ticked].some((k) => !saved.has(k)));
+const selEmp = () => EMPS.find((u) => u.id === sel);
+
+function setMode(m) {
+  if (m === mode) return;
+  if (dirty() && !confirm('You have unsaved changes. Discard them?')) return;
+  mode = m; sel = null; saved = new Set(); ticked = new Set(); flagged = { missing: [], renamed: [] };
+  $('mode-emp').setAttribute('aria-pressed', m === 'emp');
+  $('mode-site').setAttribute('aria-pressed', m === 'site');
+  $('left-search').value = ''; $('right-search').value = '';
+  resetCap('left'); resetCap('right');
+  $('left-group').classList.toggle('hidden', m === 'emp');
+  $('right-group').classList.toggle('hidden', m === 'site');
+  renderLeft(); renderRight();
+}
+$('mode-emp').onclick = () => setMode('emp');
+$('mode-site').onclick = () => setMode('site');
+
+/* The sheet can hold 2,000 sites and the crew 400 people. Building that many
+   rows on every keystroke is what makes a page feel broken, so each list draws
+   a capped window and offers the rest on a button. Filtering, counting and
+   "Tick all shown" still work over every match, not just the drawn rows. */
+const CAP = 300;
+const cap = { left: CAP, right: CAP, crew: 150 };
+const resetCap = (k) => { cap[k] = k === 'crew' ? 150 : CAP; };
+
+function moreRow(side, total, shown) {
+  if (shown >= total) return '';
+  const step = Math.min(side === 'crew' ? 150 : CAP, total - shown);
+  return `<div class="more-row">Showing <b>${shown.toLocaleString()}</b> of ${total.toLocaleString()}
+    <button class="quiet-btn" data-more="${side}">Show ${step} more</button>
+    <button class="quiet-btn" data-more="${side}" data-all="1">Show all ${total.toLocaleString()}</button></div>`;
+}
+function showMore(side, all, total, redraw) {
+  cap[side] = all ? total : cap[side] + (side === 'crew' ? 150 : CAP);
+  redraw();
+}
+
+function filteredSites(q, group) {
+  q = norm(q);
+  return SITES.filter((s) => (!group || s.group === group)
+    && (!q || norm(`${s.sl} ${s.name} ${s.group}`).includes(q)));
+}
+function filteredEmps(q) {
+  q = norm(q);
+  return EMPS.filter((u) => !q || norm(`${u.name} ${u.username} ${u.phone || ''}`).includes(q));
+}
+
+function renderLeft() {
+  const wrap = $('left-list');
+  if (mode === 'emp') {
+    $('left-title').textContent = 'Employees';
+    $('left-sub').textContent = `${EMPS.filter((u) => u.active).length} active · pick one to set their sites`;
+    $('left-search').placeholder = 'Search name or username';
+    const all = filteredEmps($('left-search').value);
+    const list = all.slice(0, cap.left);
+    wrap.innerHTML = list.length ? list.map((u) => `
+      <div class="pick choice ${u.id === sel ? 'sel' : ''} ${u.active ? '' : 'off'}" data-key="${u.id}">
+        <span class="grow"><div class="truncate">${esc(u.name)}</div><div class="sub">${esc(u.username)}${u.active ? '' : ' · disabled'}</div></span>
+        <span class="count ${u.sites ? '' : 'zero'}">${plural(u.sites, 'site', 'sites')}</span>
+      </div>`).join('') + moreRow('left', all.length, list.length)
+      : `<div class="pick empty">${EMPS.length ? 'No one matches.' : 'No employees yet — add them under Employees.'}</div>`;
+  } else {
+    $('left-title').textContent = 'Sites in FL Rep';
+    $('left-sub').textContent = `${SITES.length} sites · pick one to choose who sees it`;
+    $('left-search').placeholder = 'Search site, code or section';
+    const all = filteredSites($('left-search').value, $('left-group').value);
+    const list = all.slice(0, cap.left);
+    wrap.innerHTML = list.length ? list.map((s) => `
+      <div class="pick choice ${s.name === sel ? 'sel' : ''}" data-key="${esc(s.name)}">
+        <span class="grow"><div class="truncate">${esc(s.sl)}. ${esc(s.name)}</div><div class="sub">${esc(s.group || '')}</div></span>
+        <span class="count ${s.holders ? '' : 'zero'}">${plural(s.holders, 'person', 'people')}</span>
+      </div>`).join('') + moreRow('left', all.length, list.length)
+      : '<div class="pick empty">No site matches.</div>';
+  }
+}
+
+function renderRight() {
+  const wrap = $('right-list');
+  $('right-tools').classList.toggle('hidden', sel === null);
+  if (sel === null) {
+    $('right-title').textContent = mode === 'emp' ? 'Pick an employee' : 'Pick a site';
+    $('right-sub').textContent = mode === 'emp' ? 'Their sites appear here to tick.' : 'The employees who can see it appear here to tick.';
+    wrap.innerHTML = '<div class="empty-right">Pick ' + (mode === 'emp' ? 'an employee' : 'a site') + ' on the left.</div>';
+    $('flagged').classList.add('hidden');
+    renderBar();
+    return;
+  }
+  if (mode === 'emp') {
+    const u = selEmp();
+    $('right-title').textContent = `Sites for ${u?.name || ''}`;
+    $('right-sub').textContent = `${u?.username || ''} sees only these, in the app's मेरी साइट्स screen.`;
+    $('right-search').placeholder = 'Search site, code or section';
+    const q = $('right-search').value, g = $('right-group').value;
+    const all = filteredSites(q, g);
+    const list = all.slice(0, cap.right);
+    let group = null;
+    wrap.innerHTML = list.length ? list.map((s) => {
+      const head = !q && s.group !== group ? `<div class="grp-row">${esc(s.group || 'No section')}</div>` : '';
+      group = s.group;
+      return `${head}<label class="pick">
+        <input type="checkbox" data-key="${esc(s.name)}" ${ticked.has(s.name) ? 'checked' : ''}>
+        <span class="grow truncate">${esc(s.sl)}. ${esc(s.name)}</span>
+        <span class="meta">${s.holders ? plural(s.holders, 'person', 'people') : ''}</span>
+      </label>`;
+    }).join('') + moreRow('right', all.length, list.length)
+      : '<div class="pick empty">No site matches.</div>';
+
+    const parts = [];
+    if (flagged.missing.length) {
+      parts.push(`<b>Not in FL Rep any more:</b> ${flagged.missing.map((n) => `
+        <label style="display:inline-flex;gap:5px;align-items:center;margin-right:12px">
+          <input type="checkbox" data-key="${esc(n)}" ${ticked.has(n) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}
+        <div class="quiet t-12">Kept unless you untick them. Untick and save to remove.</div>`);
+    }
+    if (flagged.renamed.length) {
+      parts.push(`<b>Renamed in the sheet:</b> ${flagged.renamed.map((r) => `${esc(r.from)} → ${esc(r.to)}`).join('; ')}. Still shown to the employee.`);
+    }
+    $('flagged').innerHTML = parts.join('<div style="height:8px"></div>');
+    $('flagged').classList.toggle('hidden', !parts.length);
+  } else {
+    const s = SITES.find((x) => x.name === sel);
+    $('right-title').textContent = s ? `${s.sl}. ${s.name}` : sel;
+    $('right-sub').textContent = `${s?.group ? s.group + ' · ' : ''}tick everyone who should see this site.`;
+    $('right-search').placeholder = 'Search name or username';
+    const all = filteredEmps($('right-search').value);
+    const list = all.slice(0, cap.right);
+    wrap.innerHTML = list.length ? list.map((u) => `
+      <label class="pick ${u.active ? '' : 'off'}">
+        <input type="checkbox" data-key="${u.id}" ${ticked.has(u.id) ? 'checked' : ''}>
+        <span class="grow truncate">${esc(u.name)} <span class="sub">${esc(u.username)}${u.active ? '' : ' · disabled'}</span></span>
+        <span class="meta">${plural(u.sites, 'site', 'sites')}</span>
+      </label>`).join('') + moreRow('right', all.length, list.length)
+      : '<div class="pick empty">No one matches.</div>';
+    $('flagged').classList.add('hidden');
+  }
+  renderBar();
+}
+
+function renderBar() {
+  const add = [...ticked].filter((k) => !saved.has(k)).length;
+  const rem = [...saved].filter((k) => !ticked.has(k)).length;
+  if (sel === null) {
+    $('send-sum').textContent = 'Nothing picked';
+    $('send-detail').textContent = 'Pick someone on the left to start.';
+  } else if (mode === 'emp') {
+    $('send-sum').innerHTML = `<b>${ticked.size}</b> ${ticked.size === 1 ? 'site' : 'sites'} for ${esc(selEmp()?.name || '')}`;
+    $('send-detail').textContent = add || rem ? `+${add} to add · −${rem} to remove — not saved yet` : 'No changes';
+  } else {
+    $('send-sum').innerHTML = `<b>${ticked.size}</b> ${ticked.size === 1 ? 'person sees' : 'people see'} this site`;
+    $('send-detail').textContent = add || rem ? `+${add} to add · −${rem} to remove — not saved yet` : 'No changes';
+  }
+  $('save-go').disabled = !dirty();
+  $('undo-go').classList.toggle('hidden', !dirty());
+}
+
+async function choose(key) {
+  if (key === sel) return;
+  if (dirty() && !confirm('You have unsaved changes. Discard them?')) return;
+  sel = key; saved = new Set(); ticked = new Set(); flagged = { missing: [], renamed: [] };
+  resetCap('right');
+  $('send-msg').textContent = '';
+  renderLeft();
+  $('right-list').innerHTML = '<div class="empty-right">Loading…</div>';
+  try {
+    if (mode === 'emp') {
+      const d = await api('/admin/access/' + key);
+      if (sel !== key) return;
+      saved = new Set([...d.sites.map((s) => s.name), ...d.missing]);
+      flagged = { missing: d.missing, renamed: d.sites.filter((s) => s.renamed_from).map((s) => ({ from: s.renamed_from, to: s.name })) };
+    } else {
+      const d = await api('/admin/site-access?site=' + encodeURIComponent(key));
+      if (sel !== key) return;
+      saved = new Set(d.employee_ids);
+    }
+    ticked = new Set(saved);
+  } catch (e) { note($('alloc-err'), e.message, 'bad'); }
+  renderRight();
+}
+
+$('left-list').addEventListener('click', (e) => {
+  const row = e.target.closest('.pick.choice');
+  if (row) choose(mode === 'emp' ? Number(row.dataset.key) : row.dataset.key);
+});
+const redrawLeft = () => { resetCap('left'); renderLeft(); };
+const redrawRight = () => { resetCap('right'); renderRight(); };
+$('left-search').addEventListener('input', debounce(redrawLeft, 160));
+$('left-group').addEventListener('change', redrawLeft);
+$('right-search').addEventListener('input', debounce(redrawRight, 160));
+$('right-group').addEventListener('change', redrawRight);
+$('left-list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-more]');
+  if (b) showMore('left', b.dataset.all, filteredLeftCount(), renderLeft);
+});
+$('right-list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-more]');
+  if (b) showMore('right', b.dataset.all, shownKeys().length, renderRight);
+});
+const filteredLeftCount = () => (mode === 'emp'
+  ? filteredEmps($('left-search').value).length
+  : filteredSites($('left-search').value, $('left-group').value).length);
+
+const keyOf = (cb) => (mode === 'emp' ? cb.dataset.key : Number(cb.dataset.key));
+document.querySelector('.right').addEventListener('change', (e) => {
+  const cb = e.target.closest('input[type=checkbox][data-key]');
+  if (!cb) return;
+  cb.checked ? ticked.add(keyOf(cb)) : ticked.delete(keyOf(cb));
+  renderBar();
+});
+/* Every row the current filter matches — including ones past the draw cap, so
+   "Tick all shown" still means the whole filtered route. */
+function shownKeys() {
+  return mode === 'emp'
+    ? filteredSites($('right-search').value, $('right-group').value).map((s) => s.name)
+    : filteredEmps($('right-search').value).map((u) => u.id);
+}
+function tickShown(on) {
+  for (const k of shownKeys()) on ? ticked.add(k) : ticked.delete(k);
+  $('right-list').querySelectorAll('input[type=checkbox][data-key]').forEach((cb) => { cb.checked = on; });
+  renderBar();
+}
+$('tick-shown').onclick = () => tickShown(true);
+$('untick-shown').onclick = () => tickShown(false);
+$('undo-go').onclick = () => { ticked = new Set(saved); renderRight(); };
+
+$('save-go').addEventListener('click', async () => {
+  const btn = $('save-go'), msg = $('send-msg');
+  btn.disabled = true; btn.textContent = 'Saving…'; msg.className = 'msg';
+  try {
+    const d = mode === 'emp'
+      ? await api('/admin/access/' + sel, { method: 'PUT', body: { sites: [...ticked] } })
+      : await api('/admin/site-access', { method: 'PUT', body: { site: sel, employee_ids: [...ticked] } });
+    saved = new Set(ticked);
+    msg.className = 'msg good';
+    msg.textContent = `Saved — ${d.added} added, ${d.removed} removed.`;
+    await Promise.all([loadEmployees(), loadSites()]);
+    renderLeft(); renderRight();
+  } catch (e) { msg.className = 'msg bad'; msg.textContent = e.message; }
+  btn.textContent = 'Save';
+  renderBar();
+});
+
+/* ================================================================ employees */
+function renderCrew() {
+  const q = norm($('crew-search').value);
+  const all = EMPS.filter((u) => !q || norm(`${u.name} ${u.username} ${u.phone || ''}`).includes(q));
+  const list = all.slice(0, cap.crew);
+  $('crew-count').textContent = `· ${EMPS.filter((u) => u.active).length} active of ${EMPS.length}`;
+  $('staff-body').innerHTML = list.length ? list.map((u) => `
+    <tr>
+      <td>${esc(u.name)}</td>
+      <td class="mono-cell t-13">${esc(u.username)}</td>
+      <td class="mono-cell t-13 quiet">${esc(u.phone || '—')}</td>
+      <td class="mono-cell"><button class="quiet-btn" data-sites="${u.id}">${plural(u.sites, 'site', 'sites')}</button></td>
+      <td class="mono-cell"><button class="quiet-btn ${u.devices > 1 ? 'warn-btn' : ''}" data-dev="${u.id}" data-name="${esc(u.name)}">${
+        u.devices ? plural(u.devices, 'device', 'devices') : '<span class="quiet">none</span>'}</button></td>
+      <td><span class="badge ${u.active ? 'ok' : 'idle'}"><span class="dot"></span>${u.active ? 'active' : 'disabled'}</span></td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="quiet-btn" data-reset="${u.id}">Reset password</button>
+        <button class="quiet-btn" data-toggle="${u.id}" data-active="${u.active}">${u.active ? 'Disable' : 'Enable'}</button>
+        <button class="quiet-btn danger-btn" data-del="${u.id}" data-name="${esc(u.name)}" data-user="${esc(u.username)}" data-nsites="${u.sites}">Delete</button>
+      </td>
+    </tr>`).join('') + (list.length < all.length
+      ? `<tr class="empty-row"><td colspan="7"><div class="more-row" style="border:0;background:none;padding:4px 0">
+          Showing <b>${list.length}</b> of ${all.length.toLocaleString()}
+          <button class="quiet-btn" data-crew-more="1">Show 150 more</button>
+          <button class="quiet-btn" data-crew-more="1" data-all="1">Show all ${all.length.toLocaleString()}</button>
+         </div></td></tr>` : '')
+    : `<tr class="empty-row"><td colspan="7">${EMPS.length ? 'No one matches.' : 'No employee logins yet.'}</td></tr>`;
+}
+$('crew-search').addEventListener('input', debounce(() => { resetCap('crew'); renderCrew(); }, 160));
+$('staff-body').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-crew-more]');
+  if (!b) return;
+  const q = norm($('crew-search').value);
+  const total = EMPS.filter((u) => !q || norm(`${u.name} ${u.username} ${u.phone || ''}`).includes(q)).length;
+  showMore('crew', b.dataset.all, total, renderCrew);
+});
+
+$('staff-go').addEventListener('click', async () => {
+  const btn = $('staff-go');
+  btn.disabled = true;
+  try {
+    await api('/admin/employees', { body: {
+      name: $('e-name').value.trim(), username: $('e-user').value.trim().toLowerCase(),
+      password: $('e-pass').value, phone: $('e-phone').value.trim() } });
+    note($('staff-note'), `Login created for ${$('e-user').value.trim().toLowerCase()}. Now give them sites under Allocate sites.`, 'good');
+    ['e-name', 'e-user', 'e-pass', 'e-phone'].forEach((id) => { $(id).value = ''; });
+    await loadEmployees(); renderCrew(); loadSummary();
+  } catch (e) { note($('staff-note'), e.message, 'bad'); }
+  btn.disabled = false;
+});
+$('e-user').addEventListener('input', (e) => { const p = e.target.selectionStart; e.target.value = e.target.value.toLowerCase(); e.target.setSelectionRange(p, p); });
+
+$('staff-body').addEventListener('click', async (e) => {
+  const sites = e.target.closest('[data-sites]'), reset = e.target.closest('[data-reset]'),
+        toggle = e.target.closest('[data-toggle]'), del = e.target.closest('[data-del]'),
+        dev = e.target.closest('[data-dev]');
+  if (dev) {
+    document.querySelector('#nav [data-tab=devices]').click();
+    $('dev-only-multi').checked = false;
+    $('dev-search').value = dev.dataset.name;
+    await loadDevices();
+    renderDevices();
+  }
+  if (sites) {
+    document.querySelector('#nav [data-tab=allocate]').click();
+    if (mode !== 'emp') setMode('emp');
+    choose(Number(sites.dataset.sites));
+  }
+  if (reset) {
+    const pw = prompt('New password for this employee (at least 6 characters)');
+    if (!pw) return;
+    try { await api('/admin/employees/' + reset.dataset.reset, { method: 'PATCH', body: { password: pw } }); alert('Password changed. Give the new password to the employee.'); }
+    catch (err) { alert(err.message); }
+  }
+  if (toggle) {
+    const on = toggle.dataset.active !== '1';
+    if (!on && !confirm('Disable this login? They are signed out at once and cannot sign in until enabled.')) return;
+    await api('/admin/employees/' + toggle.dataset.toggle, { method: 'PATCH', body: { active: on } });
+    await loadEmployees(); renderCrew(); loadSummary();
+  }
+  if (del) {
+    const { del: id, name, user, nsites } = del.dataset;
+    const n = Number(nsites);
+    const warn = `Delete ${name} (${user}) for good?\n\n`
+      + `• Their login stops working at once\n`
+      + (n ? `• Their ${n} allocated ${n === 1 ? 'site is' : 'sites are'} released\n` : '')
+      + `• Entries they already filed are KEPT and still show their name\n\n`
+      + `This cannot be undone. To block them temporarily instead, use Disable.`;
+    if (!confirm(warn)) return;
+    del.disabled = true; del.textContent = 'Deleting…';
+    try {
+      const d = await api('/admin/employees/' + id, { method: 'DELETE' });
+      await loadEmployees(); renderCrew(); loadSummary();
+      // If their allocation screen is open, drop back to nothing selected.
+      if (mode === 'emp' && sel === Number(id)) { sel = null; saved = new Set(); ticked = new Set(); renderLeft(); renderRight(); }
+      note($('staff-note'), `${d.name} deleted.`
+        + (d.entries_kept ? ` ${plural(d.entries_kept, 'entry', 'entries')} kept under their name.` : '')
+        + (d.sites_removed ? ` ${plural(d.sites_removed, 'site', 'sites')} released.` : ''), 'good');
+    } catch (err) {
+      note($('staff-note'), err.message, 'bad');
+      del.disabled = false; del.textContent = 'Delete';
+    }
+  }
+});
+
+/* Bulk add: one request per person so each password hash stays well inside
+   the free plan's per-request CPU limit. */
+const sixDigits = () => String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+let bulkDone = [];
+$('bulk-go').addEventListener('click', async () => {
+  const lines = $('bulk-text').value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const people = [];
+  const problems = [];
+  const seen = new Set(EMPS.map((u) => u.username));
+  lines.forEach((line, i) => {
+    const [name = '', userRaw = '', pw = '', phone = ''] = line.split(/\t|,/).map((x) => x.trim());
+    const username = userRaw.toLowerCase();
+    if (/^(full\s*)?name$/i.test(name)) return;                 // a pasted header row
+    if (name.length < 2) return problems.push(`Line ${i + 1}: no name`);
+    if (!/^[a-z0-9._-]{3,}$/.test(username)) return problems.push(`Line ${i + 1}: "${userRaw}" is not a valid username`);
+    if (seen.has(username)) return problems.push(`Line ${i + 1}: "${username}" already exists`);
+    if (pw && pw.length < 6) return problems.push(`Line ${i + 1}: password under 6 characters`);
+    seen.add(username);
+    people.push({ name, username, password: pw || sixDigits(), phone });
+  });
+  if (problems.length) return note($('bulk-note'), `Fix these first, nothing was created:\n${problems.slice(0, 12).join('\n')}${problems.length > 12 ? `\n…and ${problems.length - 12} more` : ''}`, 'bad');
+  if (!people.length) return note($('bulk-note'), 'Paste at least one line.', 'bad');
+
+  const btn = $('bulk-go');
+  btn.disabled = true;
+  $('bulk-progress').classList.remove('hidden');
+  bulkDone = [];
+  const failed = [];
+  for (let i = 0; i < people.length; i++) {
+    const p = people[i];
+    try { await api('/admin/employees', { body: p }); bulkDone.push(p); }
+    catch (e) { failed.push(`${p.username}: ${e.message}`); }
+    $('bulk-progress').firstElementChild.style.width = `${((i + 1) / people.length) * 100}%`;
+    btn.textContent = `Creating ${i + 1} of ${people.length}…`;
+  }
+  btn.disabled = false; btn.textContent = 'Create logins';
+  note($('bulk-note'), `${plural(bulkDone.length, 'login', 'logins')} created.` + (failed.length ? `\n${failed.length} failed:\n${failed.join('\n')}` : '')
+    + (bulkDone.length ? '\nDownload the list now — passwords are not shown again.' : ''), failed.length ? 'bad' : 'good');
+  $('bulk-csv').classList.toggle('hidden', !bulkDone.length);
+  $('bulk-out').classList.toggle('hidden', !bulkDone.length);
+  $('bulk-out').innerHTML = `<table><thead><tr><th>Name</th><th>Username</th><th>Password</th></tr></thead><tbody>${
+    bulkDone.map((p) => `<tr><td>${esc(p.name)}</td><td class="mono-cell">${esc(p.username)}</td><td class="mono-cell">${esc(p.password)}</td></tr>`).join('')}</tbody></table>`;
+  if (bulkDone.length) $('bulk-text').value = '';
+  await loadEmployees(); renderCrew(); loadSummary();
+});
+$('bulk-csv').addEventListener('click', () => {
+  const cell = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  const csv = ['Name,Username,Password,Phone', ...bulkDone.map((p) => [p.name, p.username, p.password, p.phone].map(cell).join(','))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `operator-logins-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+});
+
+/* ================================================================ entries */
+/* The server filters, counts and pages, so the browser only ever holds one
+   page. Opening a year of entries costs the same as opening today. */
+const entState = { offset: 0, limit: 100, total: 0 };
+
+function entQuery() {
+  const p = new URLSearchParams();
+  if ($('ent-emp').value) p.set('employee_id', $('ent-emp').value);
+  if ($('ent-kind').value) p.set('kind', $('ent-kind').value);
+  if ($('ent-from').value) p.set('from', $('ent-from').value);
+  if ($('ent-to').value) p.set('to', $('ent-to').value);
+  if ($('ent-q').value.trim()) p.set('q', $('ent-q').value.trim());
+  if ($('ent-pending').checked) p.set('status', 'pending');
+  p.set('limit', entState.limit);
+  p.set('offset', entState.offset);
+  return p.toString();
+}
+
+async function loadEntries(resetPage) {
+  if (resetPage) entState.offset = 0;
+  $('ent-body').innerHTML = '<tr class="empty-row"><td colspan="8">Loading…</td></tr>';
+  try {
+    const d = await api('/admin/entries?' + entQuery());
+    entState.total = d.total;
+    const dash = '<span class="quiet">—</span>';
+    $('ent-body').innerHTML = d.entries.length ? d.entries.map((e) => {
+      const svc = e.kind === 'service';
+      return `
+      <tr>
+        <td class="mono-cell t-13">${esc(e.entry_stamp)}</td>
+        <td>${esc(e.employee_name)}</td>
+        <td><span class="kind ${svc ? 'svc' : ''}">${svc ? 'सर्विस' : 'डीज़ल भरना'}</span></td>
+        <td>${esc(e.site_text)}</td>
+        <td class="mono-cell">${svc ? dash : esc(e.diesel_filled)}</td>
+        <td class="mono-cell">${svc ? dash : esc(e.generator_reading)}</td>
+        <td class="mono-cell">${svc ? esc(e.service_reading ?? '') : dash}</td>
+        <td>${e.sheet_status === 'synced'
+          ? `<span class="badge ok"><span class="dot"></span>row ${esc((e.sheet_row || '').split('!A')[1] || '')}</span>`
+          : '<span class="badge warn"><span class="dot"></span>waiting</span>'}</td>
+      </tr>`; }).join('')
+      : `<tr class="empty-row"><td colspan="8">${entState.offset ? 'No more entries.' : 'Nothing matches these filters.'}</td></tr>`;
+
+    const from = d.total ? entState.offset + 1 : 0;
+    const to = entState.offset + d.entries.length;
+    $('ent-count').innerHTML = d.total
+      ? `<b>${from}–${to}</b> of ${d.total.toLocaleString()}`
+      : 'No entries';
+    $('ent-prev').disabled = entState.offset === 0;
+    $('ent-next').disabled = !d.has_more;
+  } catch (e) {
+    $('ent-body').innerHTML = `<tr class="empty-row"><td colspan="8">${esc(e.message)}</td></tr>`;
+  }
+}
+
+
+['ent-emp', 'ent-kind', 'ent-from', 'ent-to', 'ent-pending'].forEach((id) =>
+  $(id).addEventListener('change', () => loadEntries(true)));
+$('ent-q').addEventListener('input', debounce(() => loadEntries(true), 350));
+$('ent-size').addEventListener('change', () => { entState.limit = Number($('ent-size').value); loadEntries(true); });
+$('ent-prev').addEventListener('click', () => {
+  entState.offset = Math.max(0, entState.offset - entState.limit); loadEntries();
+});
+$('ent-next').addEventListener('click', () => { entState.offset += entState.limit; loadEntries(); });
+$('ent-reset').addEventListener('click', () => {
+  ['ent-emp', 'ent-kind', 'ent-from', 'ent-to', 'ent-q'].forEach((id) => { $(id).value = ''; });
+  $('ent-pending').checked = false;
+  loadEntries(true);
+});
+
+$('sync-go').addEventListener('click', async () => {
+  const btn = $('sync-go');
+  btn.disabled = true; btn.textContent = 'Writing…';
+  try {
+    const d = await api('/admin/sync', { body: {} });
+    if (d.busy) note($('sync-note'), d.message, '');
+    else if (d.error) note($('sync-note'), `${plural(d.synced, 'entry', 'entries')} written, then the sheet refused: ${d.error}`, 'bad');
+    else note($('sync-note'), d.synced ? `${plural(d.synced, 'entry', 'entries')} written to the sheet.` : 'Nothing was waiting — the sheet is up to date.', 'good');
+    loadEntries(); loadSummary();
+  } catch (e) { note($('sync-note'), e.message, 'bad'); }
+  btn.disabled = false; btn.textContent = 'Write waiting entries to the sheet now';
+});
+
+/* ================================================================ devices */
+const devState = { offset: 0, limit: 100, total: 0 };
+const whenStr = (v) => {
+  if (!v) return '—';
+  const d = new Date(v.replace(' ', 'T') + 'Z');            // D1 stores UTC
+  if (isNaN(d)) return esc(v);
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const time = d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return days >= 1 ? `${time} <span class="quiet">(${plural(days, 'day', 'days')} ago)</span>` : time;
+};
+
+async function loadDevices(resetPage) {
+  if (resetPage) devState.offset = 0;
+  $('dev-body').innerHTML = '<tr class="empty-row"><td colspan="8">Loading…</td></tr>';
+  const p = new URLSearchParams();
+  if ($('dev-search').value.trim()) p.set('q', $('dev-search').value.trim());
+  if ($('dev-only-multi').checked) p.set('multi', '1');
+  p.set('limit', devState.limit); p.set('offset', devState.offset);
+  try {
+    const d = await api('/admin/devices?' + p.toString());
+    devState.total = d.total;
+    $('dev-flagged').innerHTML = d.multi_accounts
+      ? `<b>${plural(d.multi_accounts, 'account', 'accounts')} on 2+ devices</b>`
+      : 'nobody on more than one';
+    $('dev-body').innerHTML = d.devices.length ? d.devices.map((r) => {
+      const many = r.device_count > 1;
+      return `
+      <tr class="${many ? 'flag' : ''}">
+        <td>${esc(r.name)}${r.active ? '' : ' <span class="quiet t-12">(disabled)</span>'}
+          ${many ? `<span class="dev-tag" style="margin-left:6px">${r.device_count} devices</span>` : ''}</td>
+        <td class="mono-cell t-13">${esc(r.username)}</td>
+        <td>${esc(r.label || 'Unknown device')}
+          ${r.shared ? '<span class="dev-tag" style="margin-left:6px" title="This same phone is signed in to another account too">shared phone</span>' : ''}</td>
+        <td><span class="dev-tag ${r.platform === 'android' ? 'android' : ''}">${r.platform === 'android' ? 'app' : 'browser'}</span></td>
+        <td class="mono-cell t-13">${whenStr(r.first_seen)}</td>
+        <td class="mono-cell t-13">${whenStr(r.last_seen)}</td>
+        <td class="mono-cell">${r.logins}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="quiet-btn danger-btn" data-signout="${r.employee_id}" data-name="${esc(r.name)}">Sign out all</button>
+        </td>
+      </tr>`; }).join('')
+      : `<tr class="empty-row"><td colspan="8">${devState.offset ? 'No more devices.'
+        : 'No sign-ins recorded yet. Devices appear here once operators sign in with the new app.'}</td></tr>`;
+
+    const from = d.total ? devState.offset + 1 : 0;
+    $('dev-count').innerHTML = d.total
+      ? `<b>${from}–${devState.offset + d.devices.length}</b> of ${d.total.toLocaleString()}`
+      : 'No devices';
+    $('dev-prev').disabled = devState.offset === 0;
+    $('dev-next').disabled = !d.has_more;
+  } catch (e) { $('dev-body').innerHTML = `<tr class="empty-row"><td colspan="8">${esc(e.message)}</td></tr>`; }
+}
+$('dev-search').addEventListener('input', debounce(() => loadDevices(true), 350));
+$('dev-only-multi').addEventListener('change', () => loadDevices(true));
+$('dev-prev').addEventListener('click', () => {
+  devState.offset = Math.max(0, devState.offset - devState.limit); loadDevices();
+});
+$('dev-next').addEventListener('click', () => { devState.offset += devState.limit; loadDevices(); });
+
+async function signOutAll(id, name) {
+  if (!confirm(`Sign ${name} out of every device?\n\n`
+    + '• Every phone they are signed in on is signed out at once\n'
+    + '• The device list for them is cleared\n'
+    + '• Their username and password still work — they can sign in again\n\n'
+    + 'Use this when an account has been shared and you want a clean start.')) return false;
+  try {
+    const d = await api(`/admin/employees/${id}/signout`, { body: {} });
+    note($('dev-note'), `${d.name} signed out of ${plural(d.devices, 'device', 'devices')}.`, 'good');
+    await Promise.all([loadDevices(), loadEmployees()]);
+    renderCrew(); loadSummary();
+    return true;
+  } catch (e) { note($('dev-note'), e.message, 'bad'); return false; }
+}
+$('dev-body').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-signout]');
+  if (b) signOutAll(Number(b.dataset.signout), b.dataset.name);
+});
+
+/* ================================================================ my account */
+const closeAcct = () => $('acct-modal').classList.remove('on');
+$('acct-open').addEventListener('click', () => {
+  const who = store.user || {};
+  $('ac-name').value = who.name || ''; $('ac-user').value = who.username || '';
+  ['pw-current', 'pw-new', 'pw-again'].forEach((id) => { $(id).value = ''; });
+  $('ac-note').className = 'notice hidden'; $('pw-note').className = 'notice hidden';
+  $('acct-modal').classList.add('on');
+  $('pw-current').focus();
+});
+$('acct-close').addEventListener('click', closeAcct);
+$('acct-modal').addEventListener('click', (e) => { if (e.target.id === 'acct-modal') closeAcct(); });
+$('ac-user').addEventListener('input', (e) => { const p = e.target.selectionStart; e.target.value = e.target.value.toLowerCase(); e.target.setSelectionRange(p, p); });
+$('ac-go').addEventListener('click', async () => {
+  const current = $('pw-current').value, name = $('ac-name').value.trim(), username = $('ac-user').value.trim().toLowerCase();
+  if (!current) return note($('ac-note'), 'Enter your current password above.', 'bad');
+  try {
+    await api('/auth/profile', { body: { current, name, username } });
+    store.user = { ...store.user, name, username };
+    $('who').textContent = name;
+    note($('ac-note'), `Saved. Sign in as "${username}" from now on.`, 'good');
+  } catch (e) { note($('ac-note'), e.message, 'bad'); }
+});
+$('pw-go').addEventListener('click', async () => {
+  const current = $('pw-current').value, next = $('pw-new').value, again = $('pw-again').value;
+  if (!current) return note($('pw-note'), 'Enter your current password above.', 'bad');
+  if (next.length < 6) return note($('pw-note'), 'The new password needs at least 6 characters.', 'bad');
+  if (next !== again) return note($('pw-note'), 'The two new passwords do not match.', 'bad');
+  try {
+    await api('/auth/password', { body: { current, password: next } });
+    $('pw-current').value = next; $('pw-new').value = ''; $('pw-again').value = '';
+    note($('pw-note'), 'Password updated. Use the new one next time you sign in.', 'good');
+  } catch (e) { note($('pw-note'), e.message, 'bad'); }
+});
+
+/* ---------------- start ---------------- */
+(async () => {
+  if (!me) return;
+  $('left-list').innerHTML = '<div class="pick empty">Loading…</div>';
+  loadSummary();
+  try { await Promise.all([loadEmployees(), loadSites()]); }
+  catch (e) { note($('alloc-err'), e.message, 'bad'); }
+  renderLeft(); renderRight();
+  setInterval(loadSummary, 60000);
+})();
+</script>
+</body>
+</html>

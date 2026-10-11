@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FieldOps Operator</title>
+<meta name="theme-color" content="#0b1a1e">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="stylesheet" href="./css/app.css">
+<style>
+  body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
+
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    background: var(--ink-900); border-bottom: 1px solid var(--ink-700);
+  }
+  .topbar .mark { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 700; font-size: 16px; }
+  .topbar .mark small { font-weight: 600; font-size: 12px; color: var(--dim); }
+  .topbar .initials {
+    margin-left: auto; width: 32px; height: 32px; border-radius: 50%;
+    display: grid; place-items: center; background: var(--ink-700);
+    font-family: var(--display); font-size: 12px; font-weight: 700; color: #cadbdd;
+    border: 1px solid var(--ink-600);
+  }
+
+  main { padding: 18px 16px 0; max-width: 620px; margin: 0 auto; }
+  .screen { display: none; }
+  .screen.on { display: block; }
+  .screen > h1 { margin-bottom: 4px; }
+  .screen > .lede { color: var(--dim); font-size: 13px; margin-bottom: 18px; }
+
+  /* Hindi labels read better a touch larger than the Latin field labels */
+  .hi-label { font-size: 15px; font-weight: 600; color: #cfe0e2; letter-spacing: 0; margin-bottom: 7px; }
+
+  .submitbar {
+    position: fixed; left: 0; right: 0; bottom: calc(60px + env(safe-area-inset-bottom));
+    padding: 10px 16px; background: linear-gradient(180deg, transparent, var(--ink-900) 32%);
+  }
+  .submitbar .inner { max-width: 620px; margin: 0 auto; }
+
+  .queued {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px dashed var(--amber); border-radius: var(--r);
+    padding: 10px 12px; margin-bottom: 16px; font-size: 13px; color: #f3d9a6;
+  }
+
+  /* --- site report: mirrors the FL Rep card the superadmin designed --- */
+  .report-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+  .report-head .lede { color: var(--dim); font-size: 12.5px; margin: 4px 0 0; }
+  .icon-btn {
+    margin-left: auto; flex: none; background: none; border: 1px solid var(--ink-600);
+    border-radius: 50%; width: 38px; height: 38px; padding: 0;
+    display: grid; place-items: center; color: #b8cccf;
+  }
+  .icon-btn:hover { background: var(--ink-800); }
+  .icon-btn.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .group-label {
+    font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .02em;
+    color: var(--amber); margin: 18px 0 8px; display: flex; align-items: center; gap: 8px;
+  }
+  .group-label::after { content: ''; flex: 1; height: 1px; background: var(--ink-700); }
+
+  .site {
+    background: #fff; color: #1b2a2e; border-radius: 6px;
+    padding: 11px 11px 12px; margin-bottom: 12px;
+  }
+  .site .name { font-family: var(--display); font-weight: 700; font-size: 14.5px; line-height: 1.3; margin: 0 0 8px; }
+  .site .name .sl { color: #7b8d90; font-weight: 600; font-size: 12px; margin-right: 4px; }
+  .site .grid {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    border: 1px solid #c8d2d1; border-radius: 3px; overflow: hidden;
+  }
+  .site .grid > div {
+    display: grid; place-items: center; text-align: center;
+    border-right: 1px solid #c8d2d1; padding: 6px 3px; min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .site .grid > div:nth-child(5n) { border-right: 0; }
+  .site .grid .h {
+    background: #00ffff; color: #23393d;
+    font-family: var(--display); font-size: 10.5px; font-weight: 600; line-height: 1.2;
+    border-bottom: 1px solid #c8d2d1; min-height: 38px;
+  }
+  .site .grid .v {
+    font-family: var(--display); font-weight: 700; font-size: 15.5px; line-height: 1.15;
+    color: #111; min-height: 42px; font-variant-numeric: tabular-nums;
+  }
+  .site .grid .v.long { font-size: 11.5px; }
+  .site .grid .v.blank { color: #a5b3b5; font-weight: 500; }
+
+  .hist {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--ink-700);
+  }
+  .hist .d { font-family: var(--display); font-weight: 600; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 84px; padding-top: 2px; }
+  .hist .vals { font-size: 13px; color: #b8cccf; font-variant-numeric: tabular-nums; }
+  .hist .badge { flex: none; margin-top: 2px; }
+  .tag.svc {
+    display: inline-block; font-family: var(--display); font-size: 10.5px; font-weight: 700;
+    color: #4fc3dd; border: 1px solid #4fc3dd; border-radius: 3px;
+    padding: 0 4px; margin-right: 5px; vertical-align: 1px;
+  }
+
+  /* --- bottom nav --- */
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+    display: flex; background: var(--ink-800); border-top: 1px solid var(--ink-600);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabbar button {
+    flex: 1; min-width: 0; background: none; border: 0; border-radius: 0; padding: 8px 2px 9px;
+    color: #7f9a9f; font-size: 10.5px; font-family: var(--text); font-weight: 600; line-height: 1.2;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative;
+  }
+  .tabbar button:hover { background: none; color: #cadbdd; }
+  .tabbar button[aria-selected=true] { color: var(--amber); box-shadow: inset 0 2px 0 var(--amber); }
+  .tabbar .pip {
+    position: absolute; top: 4px; left: calc(50% + 6px);
+    min-width: 16px; height: 16px; border-radius: 9px; background: var(--amber);
+    color: #241500; font-size: 10px; line-height: 16px; padding: 0 4px; font-family: var(--display);
+  }
+</style>
+</head>
+<body class="deck">
+
+<div class="topbar">
+  <span class="mark">
+    <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><rect width="20" height="20" rx="4" fill="#f5a524"/><path d="M6 14V6h7M6 10h5" stroke="#0b1a1e" stroke-width="2" stroke-linecap="round"/></svg>
+    FieldOps <small>Operator</small>
+  </span>
+  <span class="initials" id="initials"></span>
+</div>
+
+<main>
+  <!-- ==================================== डीज़ल भरना -->
+  <div class="screen on" id="screen-fill">
+    <h1>डीज़ल भरना</h1>
+    <p class="lede" id="fill-sub"></p>
+
+    <div class="queued hidden" id="queued">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="flex:none;margin-top:2px"><path d="M2 6.5a9 9 0 0 1 12 0M4.3 9a5.5 5.5 0 0 1 7.4 0M6.6 11.4a2 2 0 0 1 2.8 0" stroke-linecap="round"/></svg>
+      <span id="queued-text"></span>
+    </div>
+
+    <div class="field">
+      <label class="hi-label" for="f-site">साइट का नाम</label>
+      <input type="text" id="f-site" placeholder="साइट का नाम लिखें" autocomplete="off" list="site-names" enterkeyhint="next">
+      <datalist id="site-names"></datalist>
+    </div>
+    <div class="field">
+      <label class="hi-label" for="f-diesel">डीज़ल भरवाया</label>
+      <input type="number" inputmode="decimal" step="any" id="f-diesel" placeholder="0" enterkeyhint="next">
+    </div>
+    <div class="field">
+      <label class="hi-label" for="f-gen">जनरेटर की रीडिंग</label>
+      <input type="number" inputmode="decimal" step="any" id="f-gen" placeholder="0" enterkeyhint="done">
+    </div>
+
+    <div class="notice hidden" id="fill-msg"></div>
+    <p class="t-12 quiet" style="margin-bottom:80px">
+      नेटवर्क न हो तब भी एंट्री फ़ोन में सेव रहती है और नेटवर्क आते ही अपने आप भेज दी जाती है।
+    </p>
+
+    <div class="submitbar">
+      <div class="inner"><button class="block" id="f-submit">जमा करें</button></div>
+    </div>
+  </div>
+
+  <!-- ==================================== सर्विस -->
+  <div class="screen" id="screen-service">
+    <h1>सर्विस</h1>
+    <p class="lede" id="svc-sub"></p>
+
+    <div class="queued hidden" id="svc-queued">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="flex:none;margin-top:2px"><path d="M2 6.5a9 9 0 0 1 12 0M4.3 9a5.5 5.5 0 0 1 7.4 0M6.6 11.4a2 2 0 0 1 2.8 0" stroke-linecap="round"/></svg>
+      <span id="svc-queued-text"></span>
+    </div>
+
+    <div class="field">
+      <label class="hi-label" for="s-site">साइट का नाम</label>
+      <input type="text" id="s-site" placeholder="साइट का नाम लिखें" autocomplete="off" list="site-names" enterkeyhint="next">
+    </div>
+    <div class="field">
+      <label class="hi-label" for="s-gen">सर्विस के बाद जनरेटर की रीडिंग</label>
+      <input type="number" inputmode="decimal" step="any" id="s-gen" placeholder="0" enterkeyhint="done">
+    </div>
+
+    <div class="notice hidden" id="svc-msg"></div>
+    <p class="t-12 quiet" style="margin-bottom:80px">
+      नेटवर्क न हो तब भी एंट्री फ़ोन में सेव रहती है और नेटवर्क आते ही अपने आप भेज दी जाती है।
+    </p>
+
+    <div class="submitbar">
+      <div class="inner"><button class="block" id="s-submit">जमा करें</button></div>
+    </div>
+  </div>
+
+  <!-- ==================================== मेरी साइट्स (FL Rep) -->
+  <div class="screen" id="screen-sites">
+    <div class="report-head">
+      <div class="grow">
+        <h1>मेरी साइट्स</h1>
+        <p class="lede" id="sites-sub">FL Rep शीट से</p>
+      </div>
+      <button class="icon-btn" id="sites-refresh" aria-label="ताज़ा करें">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13.5 8a5.5 5.5 0 1 1-1.9-4.2" stroke-linecap="round"/><path d="M13.6 2.2v3.2h-3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <input type="search" id="sites-search" class="hidden" placeholder="साइट खोजें" style="margin-bottom:6px">
+    <div class="notice hidden" id="sites-msg"></div>
+    <div id="sites-list"></div>
+  </div>
+
+  <!-- ==================================== मेरी एंट्री -->
+  <div class="screen" id="screen-history">
+    <h1>मेरी एंट्री</h1>
+    <p class="lede">आपकी पिछली 50 एंट्री।</p>
+    <div id="hist-list"></div>
+  </div>
+
+  <!-- ==================================== खाता -->
+  <div class="screen" id="screen-account">
+    <h1 id="acct-name">खाता</h1>
+    <p class="lede" id="acct-user"></p>
+
+    <div class="field">
+      <label class="hi-label" for="a-current">अभी का पासवर्ड</label>
+      <input id="a-current" type="password" autocomplete="current-password">
+    </div>
+    <div class="field">
+      <label class="hi-label" for="a-pass">नया पासवर्ड</label>
+      <input id="a-pass" type="password" autocomplete="new-password">
+      <div class="help">कम से कम 6 अक्षर।</div>
+    </div>
+    <div class="notice hidden" id="acct-msg"></div>
+    <button id="a-save">पासवर्ड बदलें</button>
+
+    <hr style="border:0;border-top:1px solid var(--ink-700);margin:26px 0">
+    <button class="ghost block" onclick="signOut()">साइन आउट</button>
+  </div>
+</main>
+
+<nav class="tabbar" id="tabbar">
+  <button data-screen="fill" aria-selected="true">
+    <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="6" height="11" rx="1"/><path d="M8.5 6h2.2a1.3 1.3 0 0 1 1.3 1.3v3.4a1.1 1.1 0 0 0 2.2 0V5.4L12 3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 6h4" stroke-linecap="round"/></svg>
+    डीज़ल भरना
+  </button>
+  <button data-screen="service">
+    <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.6 2.6a3.4 3.4 0 0 0-4.3 4.3L2.8 10.4a1.4 1.4 0 0 0 2 2l3.5-3.5a3.4 3.4 0 0 0 4.3-4.3l-1.9 1.9-1.6-.4-.4-1.6 1.9-1.9Z" stroke-linejoin="round"/></svg>
+    सर्विस
+  </button>
+  <button data-screen="sites">
+    <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2.5" width="12" height="11" rx="1.2"/><path d="M2 6h12M6.5 6v7.5" /></svg>
+    मेरी साइट्स
+  </button>
+  <button data-screen="history">
+    <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3" stroke-linecap="round"/></svg>
+    मेरी एंट्री
+    <span class="pip hidden" id="pip"></span>
+  </button>
+  <button data-screen="account">
+    <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="5.5" r="2.6"/><path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/></svg>
+    खाता
+  </button>
+</nav>
+
+<script src="./js/api.js"></script>
+<script>
+const me = requireRole('employee');
+const $ = (id) => document.getElementById(id);
+
+const note = (el, text, kind) => { el.className = 'notice ' + (kind || ''); el.textContent = text; el.classList.remove('hidden'); };
+const hhmm = (ms) => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
+const store2 = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
+};
+
+if (me) {
+  $('initials').textContent = me.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  $('acct-name').textContent = me.name;
+  $('acct-user').textContent = 'यूज़रनेम: ' + me.username;
+  $('fill-sub').textContent = me.name;
+  $('svc-sub').textContent = me.name;
+}
+
+/* ---------------- navigation ---------------- */
+const show = (name) => {
+  document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === 'screen-' + name));
+  document.querySelectorAll('#tabbar button').forEach((b) => b.setAttribute('aria-selected', b.dataset.screen === name));
+  window.scrollTo(0, 0);
+  if (name === 'sites') loadSites();
+  if (name === 'history') loadHistory();
+};
+$('tabbar').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-screen]');
+  if (btn) show(btn.dataset.screen);
+});
+
+/* ---------------- offline queue (per employee, so a shared phone never mixes them) ---------------- */
+const QKEY = 'fop_queue_' + (me ? me.id : 0);
+const queue = {
+  all: () => store2.get(QKEY, []),
+  save: (q) => store2.set(QKEY, q),
+  add(item) { const q = this.all(); q.push(item); this.save(q); },
+};
+function renderQueued() {
+  const n = queue.all().length;
+  const text = `${n} एंट्री फ़ोन में रुकी हैं — नेटवर्क आते ही भेजी जाएँगी।`;
+  for (const [box, label] of [['queued', 'queued-text'], ['svc-queued', 'svc-queued-text']]) {
+    $(box).classList.toggle('hidden', !n);
+    $(label).textContent = text;
+  }
+  $('pip').classList.toggle('hidden', !n);
+  $('pip').textContent = n;
+}
+let flushing = false;
+async function flushQueue() {
+  if (flushing || !navigator.onLine) return;
+  const pending = queue.all();
+  if (!pending.length) return;
+  flushing = true;
+  const left = [];
+  for (const item of pending) {
+    try { await api('/emp/entry', { body: item }); }
+    catch (e) {
+      // keep it if the network or server failed; drop it only if the server says it can never be accepted
+      if (e.offline || !e.status || e.status >= 500 || e.status === 401) left.push(item);
+    }
+  }
+  queue.save(left);
+  flushing = false;
+  renderQueued();
+}
+window.addEventListener('online', flushQueue);
+setInterval(flushQueue, 30000);
+
+/* ---------------- डीज़ल भरना ---------------- */
+function fillSiteSuggestions(names) {
+  $('site-names').innerHTML = names.map((n) => `<option value="${esc(n)}">`).join('');
+}
+fillSiteSuggestions((store2.get('fop_sites_' + (me ? me.id : 0), null)?.sites || []).map((s) => s.name));
+
+$('f-site').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-diesel').focus(); } });
+$('f-diesel').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-gen').focus(); } });
+$('f-gen').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-submit').click(); } });
+
+/* Both screens submit the same way — only the fields differ. One path, so a
+   fix to the offline handling applies to डीज़ल भरना and सर्विस alike. */
+async function submitEntry({ btnId, msgId, fields, build }) {
+  const el = $(msgId), btn = $(btnId);
+  const vals = {};
+  for (const f of fields) {
+    vals[f.id] = $(f.id).value.trim();
+    if (vals[f.id] === '') { $(f.id).focus(); return note(el, f.missing, 'bad'); }
+  }
+  const payload = { ...build(vals), client_uuid: newId(), taken_at: Date.now() };
+  const clear = () => fields.forEach((f) => { $(f.id).value = ''; });
+  const keepOnPhone = () => {
+    queue.add({ ...payload, queued: true });
+    renderQueued(); clear();
+    note(el, 'नेटवर्क नहीं है। एंट्री फ़ोन में सेव है, नेटवर्क आते ही भेज दी जाएगी।', 'good');
+  };
+
+  if (!navigator.onLine) return keepOnPhone();
+  btn.disabled = true; btn.textContent = 'जमा हो रहा है…';
+  try {
+    const d = await api('/emp/entry', { body: payload });
+    clear();
+    note(el, d.sheet === 'synced' ? 'जमा हो गया। शीट में दर्ज हो गया।' : 'जमा हो गया। शीट में थोड़ी देर में दिखेगा।', 'good');
+  } catch (e) {
+    if (e.offline || !e.status || e.status >= 500) keepOnPhone();
+    else note(el, e.message, 'bad');
+  }
+  btn.disabled = false; btn.textContent = 'जमा करें';
+}
+
+$('f-submit').addEventListener('click', () => submitEntry({
+  btnId: 'f-submit', msgId: 'fill-msg',
+  fields: [
+    { id: 'f-site', missing: 'साइट का नाम लिखें।' },
+    { id: 'f-diesel', missing: 'डीज़ल भरवाया लिखें।' },
+    { id: 'f-gen', missing: 'जनरेटर की रीडिंग लिखें।' },
+  ],
+  build: (v) => ({ site: v['f-site'], diesel_filled: v['f-diesel'], generator_reading: v['f-gen'] }),
+}));
+
+/* ---------------- सर्विस ---------------- */
+$('s-site').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('s-gen').focus(); } });
+$('s-gen').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('s-submit').click(); } });
+
+$('s-submit').addEventListener('click', () => submitEntry({
+  btnId: 's-submit', msgId: 'svc-msg',
+  fields: [
+    { id: 's-site', missing: 'साइट का नाम लिखें।' },
+    { id: 's-gen', missing: 'सर्विस के बाद जनरेटर की रीडिंग लिखें।' },
+  ],
+  build: (v) => ({ kind: 'service', site: v['s-site'], service_reading: v['s-gen'] }),
+}));
+
+/* ---------------- मेरी साइट्स ---------------- */
+const SKEY = 'fop_sites_' + (me ? me.id : 0);
+let SITES = store2.get(SKEY, null);
+let sitesLoadedAt = 0;
+
+function renderSites() {
+  const wrap = $('sites-list');
+  if (!SITES) { wrap.innerHTML = '<p class="quiet t-13">लोड हो रहा है…</p>'; return; }
+  const all = SITES.sites || [];
+  $('sites-search').classList.toggle('hidden', all.length <= 5);
+  $('sites-sub').textContent = all.length
+    ? `FL Rep शीट से · ${all.length} साइट` + (SITES.fetched_at ? ` · अपडेट ${hhmm(SITES.fetched_at)}` : '')
+    : 'FL Rep शीट से';
+
+  if (!all.length) {
+    wrap.innerHTML = `<div class="notice">अभी आपको कोई साइट नहीं दी गई है। सुपरएडमिन से संपर्क करें।</div>`;
+    return;
+  }
+  const q = $('sites-search').value.trim().toLowerCase();
+  const list = q ? all.filter((s) => (s.name + ' ' + s.group).toLowerCase().includes(q)) : all;
+  if (!list.length) { wrap.innerHTML = '<p class="quiet t-13">कोई साइट नहीं मिली।</p>'; return; }
+
+  const cols = SITES.columns || ['Service', 'Tank Diesel Left', 'DSL%', 'Battery', 'Fuel Motor'];
+  let group = null;
+  wrap.innerHTML = list.map((s) => {
+    const label = s.group && s.group !== group ? `<div class="group-label">${esc(s.group)}</div>` : '';
+    group = s.group;
+    const heads = cols.map((c) => `<div class="h">${esc(c)}</div>`).join('');
+    const vals = s.cells.map((c) => {
+      const v = String(c.v ?? '').trim();
+      const cls = !v ? 'v blank' : v.length > 5 && isNaN(Number(v)) ? 'v long' : 'v';
+      return `<div class="${cls}" style="background:${c.bg || '#fff'}">${v ? esc(v) : '—'}</div>`;
+    }).join('');
+    return `${label}<article class="site">
+      <p class="name"><span class="sl">${esc(s.sl)}.</span>${esc(s.name)}</p>
+      <div class="grid">${heads}${vals}</div>
+    </article>`;
+  }).join('') + (SITES.missing?.length
+    ? `<p class="t-12 quiet" style="margin:14px 0 4px">ये साइट शीट में नहीं मिलीं: ${SITES.missing.map(esc).join(', ')}</p>` : '');
+}
+
+async function loadSites(force) {
+  renderSites();
+  if (!force && Date.now() - sitesLoadedAt < 15000) return;   // the server shares one read a minute anyway
+  const btn = $('sites-refresh');
+  btn.classList.add('spin');
+  $('sites-msg').classList.add('hidden');
+  try {
+    SITES = await api('/emp/sites');
+    sitesLoadedAt = Date.now();
+    store2.set(SKEY, SITES);
+    fillSiteSuggestions(SITES.sites.map((s) => s.name));
+    if (SITES.error) note($('sites-msg'), 'शीट से नया डेटा नहीं मिला, पिछला डेटा दिखाया जा रहा है।', '');
+  } catch (e) {
+    if (SITES) note($('sites-msg'), 'नेटवर्क नहीं है — पिछला डेटा दिखाया जा रहा है।', '');
+    else note($('sites-msg'), e.offline ? 'नेटवर्क नहीं है।' : e.message, 'bad');
+  }
+  btn.classList.remove('spin');
+  renderSites();
+}
+$('sites-refresh').addEventListener('click', () => loadSites(true));
+$('sites-search').addEventListener('input', renderSites);
+
+/* ---------------- मेरी एंट्री ---------------- */
+/* One line of values, whichever screen the entry came from. */
+const histVals = (e) => (e.kind === 'service'
+  ? `<span class="tag svc">सर्विस</span> रीडिंग ${esc(e.service_reading ?? '')}`
+  : `डीज़ल ${esc(e.diesel_filled)} · जनरेटर ${esc(e.generator_reading)}`);
+
+async function loadHistory() {
+  const wrap = $('hist-list');
+  const local = queue.all().slice().reverse().map((q) => `
+    <div class="hist">
+      <span class="d">${hhmm(q.taken_at)}</span>
+      <span class="grow"><div class="truncate">${esc(q.site)}</div>
+        <div class="vals">${histVals({ kind: q.kind, service_reading: q.service_reading,
+          diesel_filled: q.diesel_filled, generator_reading: q.generator_reading })}</div></span>
+      <span class="badge warn"><span class="dot"></span>फ़ोन में</span>
+    </div>`).join('');
+  wrap.innerHTML = local + '<p class="quiet t-13" style="padding-top:12px">लोड हो रहा है…</p>';
+  try {
+    const { entries } = await api('/emp/entries');
+    wrap.innerHTML = local + (entries.length ? entries.map((e) => `
+      <div class="hist">
+        <span class="d">${esc(e.entry_stamp.slice(0, 9))}<br>${esc(e.entry_stamp.slice(10, 15))}</span>
+        <span class="grow"><div class="truncate">${esc(e.site_text)}</div>
+          <div class="vals">${histVals(e)}</div></span>
+        ${e.sheet_status === 'synced'
+          ? '<span class="badge ok"><span class="dot"></span>शीट में</span>'
+          : '<span class="badge warn"><span class="dot"></span>भेजी जा रही</span>'}
+      </div>`).join('') : (local ? '' : '<p class="quiet t-13">अभी कोई एंट्री नहीं।</p>'));
+  } catch (e) {
+    wrap.innerHTML = local + `<div class="notice bad" style="margin-top:12px">${e.offline ? 'नेटवर्क नहीं है।' : esc(e.message)}</div>`;
+  }
+}
+
+/* ---------------- खाता ---------------- */
+$('a-save').addEventListener('click', async () => {
+  const el = $('acct-msg');
+  const current = $('a-current').value, next = $('a-pass').value;
+  if (!current) return note(el, 'अभी का पासवर्ड लिखें।', 'bad');
+  if (next.length < 6) return note(el, 'नया पासवर्ड कम से कम 6 अक्षर का हो।', 'bad');
+  try {
+    await api('/auth/password', { body: { current, password: next } });
+    $('a-current').value = ''; $('a-pass').value = '';
+    note(el, 'पासवर्ड बदल गया। अगली बार नए पासवर्ड से साइन इन करें।', 'good');
+  } catch (e) {
+    note(el, e.status === 403 ? 'अभी का पासवर्ड गलत है।' : e.offline ? 'नेटवर्क नहीं है।' : e.message, 'bad');
+  }
+});
+
+/* ---------------- start ---------------- */
+if (me) {
+  renderQueued();
+  flushQueue();
+  // Fetch the site list quietly so the site-name suggestions are ready.
+  api('/emp/sites').then((d) => { SITES = d; sitesLoadedAt = Date.now(); store2.set(SKEY, d); fillSiteSuggestions(d.sites.map((s) => s.name)); }).catch(() => {});
+}
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
+</script>
+</body>
+</html>

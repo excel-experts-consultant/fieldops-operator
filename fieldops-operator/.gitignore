@@ -1,0 +1,11 @@
+# Never commit keys. secret.txt / session.txt are only used to feed
+# `wrangler pages secret put` and should be deleted afterwards.
+secret.txt
+session.txt
+*.json.key
+*service-account*.json
+
+node_modules/
+android/
+.wrangler/
+.dev.vars

@@ -1,0 +1,60 @@
+name: Build Operator APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Accept Android SDK licenses without interactive prompt
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Install Node dependencies
+        run: npm install
+
+      # Add the android platform (generates android/ folder on the runner)
+      - name: Add Android platform
+        run: npx cap add android
+
+      # Sync web assets into the android/ folder
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      # Use a consistent debug keystore so APKs install over older versions
+      - name: Set up debug keystore
+        run: |
+          mkdir -p android/app
+          if [ ! -f android/app/debug.keystore ]; then
+            keytool -genkey -v \
+              -keystore android/app/debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FieldOps-Operator-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

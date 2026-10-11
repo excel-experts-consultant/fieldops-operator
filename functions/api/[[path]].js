@@ -152,14 +152,25 @@ const USERNAME_RE = /^[a-z0-9._-]{3,}$/;
  * Returns a token to release with, or 0 if someone else holds it.
  * One UPSERT statement, so taking the lease is atomic.
  */
+/*
+ * Times here are milliseconds * 1000 plus a random remainder, so each attempt
+ * writes a value nobody else will write. Holding the lease is then proved by
+ * reading the row back and seeing our own value — rather than by trusting the
+ * statement's reported row count, which the database's docs do not define for
+ * an upsert. Getting that wrong once meant every sheet write was skipped as
+ * "someone else is writing", so this no longer depends on it.
+ */
+const TICK = 1000;
+
 async function tryLock(env, name, ms) {
-  const now = Date.now();
-  const until = now + ms;
-  const r = await env.DB.prepare(`
-    INSERT INTO locks (name, until) VALUES (?, ?)
-    ON CONFLICT(name) DO UPDATE SET until = excluded.until WHERE locks.until < ?
+  const now = Date.now() * TICK;
+  const until = (Date.now() + ms) * TICK + Math.floor(Math.random() * TICK);
+  await env.DB.prepare(`
+    INSERT INTO locks (name, until) VALUES (?1, ?2)
+    ON CONFLICT(name) DO UPDATE SET until = ?2 WHERE locks.until < ?3
   `).bind(name, until, now).run();
-  return (r.meta?.changes || 0) > 0 ? until : 0;
+  const row = await env.DB.prepare('SELECT until FROM locks WHERE name = ?').bind(name).first();
+  return row && Number(row.until) === until ? until : 0;
 }
 
 /** Only frees the lease if it is still ours (it may have expired and been retaken). */
