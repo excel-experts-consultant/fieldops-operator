@@ -33,8 +33,17 @@ const store = {
   clear() { this.token = null; this.user = null; },
 };
 
+/* A request that never answers is worse than one that fails: on a weak signal a
+   fetch can hang indefinitely, and the screen sits on "जमा हो रहा है…" forever.
+   Every call gets a deadline. Giving up is safe — an entry carries a
+   client_uuid, so the phone can resend it and the server recognises it as the
+   same one instead of writing it to the sheet twice. */
+const TIMEOUT_MS = 20000;
+
 async function api(path, options = {}) {
   let res;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), options.timeout || TIMEOUT_MS);
   try {
     res = await fetch(BASE + '/api' + path, {
       method: options.method || (options.body ? 'POST' : 'GET'),
@@ -44,11 +53,15 @@ async function api(path, options = {}) {
         ...(deviceId() ? { 'x-device-id': deviceId() } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: ctl.signal,
     });
   } catch {
     const err = new Error('network');
     err.offline = true;
+    err.timeout = ctl.signal.aborted;   // the server was reachable but too slow
     throw err;
+  } finally {
+    clearTimeout(timer);
   }
   let data;
   try { data = await res.json(); } catch { data = { ok: false, error: 'Server did not respond properly' }; }
@@ -59,6 +72,8 @@ async function api(path, options = {}) {
   if (!res.ok || data.ok === false) {
     const err = new Error(data.error || 'Request failed');
     err.status = res.status;
+    err.code = data.code;          // e.g. 'device_pending' when a new phone awaits approval
+    err.data = data;
     throw err;
   }
   return data;

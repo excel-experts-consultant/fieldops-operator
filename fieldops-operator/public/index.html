@@ -136,9 +136,22 @@
       store.user = data.user;
       location.href = consoleFor(data.user.role);
     } catch (e2) {
-      err.textContent = e2.offline ? 'नेटवर्क नहीं है। Check your connection.' : e2.message === 'Username or password is wrong' ? 'यूज़रनेम या पासवर्ड गलत है।' : e2.message;
-      err.classList.remove('hidden');
-      go.disabled = false; go.textContent = 'Sign in';
+      // A new phone waiting for the superadmin is not an error the operator
+      // made, so it is shown as a notice, with the phone named so the
+      // superadmin can find it in the console.
+      const waiting = e2.code === 'device_pending';
+      err.className = 'notice ' + (waiting ? 'warn' : 'bad');
+      err.textContent = e2.offline ? 'नेटवर्क नहीं है। Check your connection.'
+        : e2.message === 'Username or password is wrong' ? 'यूज़रनेम या पासवर्ड गलत है।'
+        : e2.message;
+      if ((waiting || e2.code === 'device_rejected') && e2.data?.device) {
+        const tag = document.createElement('div');
+        tag.className = 't-12';
+        tag.style.marginTop = '6px';
+        tag.textContent = 'यह फ़ोन: ' + e2.data.device;
+        err.appendChild(tag);
+      }
+      go.disabled = false; go.textContent = waiting ? 'फिर से लॉग इन करें' : 'Sign in';
     }
   });
 </script>

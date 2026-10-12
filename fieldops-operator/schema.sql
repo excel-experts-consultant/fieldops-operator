@@ -49,9 +49,15 @@ CREATE TABLE devices (
   first_seen  TEXT NOT NULL DEFAULT (datetime('now')),
   last_seen   TEXT NOT NULL DEFAULT (datetime('now')),
   logins      INTEGER NOT NULL DEFAULT 1,
+  -- An account's first phone is approved by itself. Any phone after that
+  -- waits here as 'pending' until the superadmin approves or rejects it,
+  -- and cannot be used until then.
+  status      TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('approved','pending','rejected')),
+  decided_at  TEXT,
   PRIMARY KEY (employee_id, device_id)
 );
 CREATE INDEX idx_devices_emp ON devices(employee_id, last_seen);
+CREATE INDEX idx_devices_status ON devices(status);
 
 -- Every डीज़ल भरना entry. D1 is the source of truth; the sheet is written
 -- from here in batches, so a busy minute or a Google hiccup never loses one.
@@ -66,6 +72,7 @@ CREATE TABLE entries (
   site_text         TEXT NOT NULL,
   diesel_filled     TEXT NOT NULL,    -- column D   (filling only, '' on a service entry)
   generator_reading TEXT NOT NULL,    -- column F   (filling only, '' on a service entry)
+  diesel_pct        TEXT,             -- column G   डीज़ल% (filling only; blank from older apps)
   service_reading   TEXT,             -- column J   (service only)
   entry_stamp       TEXT NOT NULL,    -- column A, e.g. "09 OCT 26 19:02:00"
   client_uuid       TEXT UNIQUE,      -- offline-safe idempotency key from the phone

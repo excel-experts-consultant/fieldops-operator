@@ -157,7 +157,11 @@
     </div>
     <div class="field">
       <label class="hi-label" for="f-gen">जनरेटर की रीडिंग</label>
-      <input type="number" inputmode="decimal" step="any" id="f-gen" placeholder="0" enterkeyhint="done">
+      <input type="number" inputmode="decimal" step="any" id="f-gen" placeholder="0" enterkeyhint="next">
+    </div>
+    <div class="field">
+      <label class="hi-label" for="f-pct">डीज़ल%</label>
+      <input type="number" inputmode="decimal" step="any" min="0" max="100" id="f-pct" placeholder="0–100" enterkeyhint="done">
     </div>
 
     <div class="notice hidden" id="fill-msg"></div>
@@ -348,7 +352,8 @@ fillSiteSuggestions((store2.get('fop_sites_' + (me ? me.id : 0), null)?.sites ||
 
 $('f-site').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-diesel').focus(); } });
 $('f-diesel').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-gen').focus(); } });
-$('f-gen').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-submit').click(); } });
+$('f-gen').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-pct').focus(); } });
+$('f-pct').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('f-submit').click(); } });
 
 /* Both screens submit the same way — only the fields differ. One path, so a
    fix to the offline handling applies to डीज़ल भरना and सर्विस alike. */
@@ -358,13 +363,17 @@ async function submitEntry({ btnId, msgId, fields, build }) {
   for (const f of fields) {
     vals[f.id] = $(f.id).value.trim();
     if (vals[f.id] === '') { $(f.id).focus(); return note(el, f.missing, 'bad'); }
+    const bad = f.check && f.check(vals[f.id]);
+    if (bad) { $(f.id).focus(); return note(el, bad, 'bad'); }
   }
   const payload = { ...build(vals), client_uuid: newId(), taken_at: Date.now() };
   const clear = () => fields.forEach((f) => { $(f.id).value = ''; });
-  const keepOnPhone = () => {
+  const keepOnPhone = (slow) => {
     queue.add({ ...payload, queued: true });
     renderQueued(); clear();
-    note(el, 'नेटवर्क नहीं है। एंट्री फ़ोन में सेव है, नेटवर्क आते ही भेज दी जाएगी।', 'good');
+    note(el, slow
+      ? 'सर्वर अभी देर कर रहा है। एंट्री फ़ोन में सेव है और अपने आप भेज दी जाएगी।'
+      : 'नेटवर्क नहीं है। एंट्री फ़ोन में सेव है, नेटवर्क आते ही भेज दी जाएगी।', 'good');
   };
 
   if (!navigator.onLine) return keepOnPhone();
@@ -374,7 +383,10 @@ async function submitEntry({ btnId, msgId, fields, build }) {
     clear();
     note(el, d.sheet === 'synced' ? 'जमा हो गया। शीट में दर्ज हो गया।' : 'जमा हो गया। शीट में थोड़ी देर में दिखेगा।', 'good');
   } catch (e) {
-    if (e.offline || !e.status || e.status >= 500) keepOnPhone();
+    // 401: the session ended (30 days passed, or this phone was removed or
+    // signed out). The app is about to go to sign-in, so keep what was typed:
+    // the queue is per person and sends itself once they are signed in again.
+    if (e.offline || !e.status || e.status >= 500 || e.status === 401) keepOnPhone(e.timeout);
     else note(el, e.message, 'bad');
   }
   btn.disabled = false; btn.textContent = 'जमा करें';
@@ -386,8 +398,10 @@ $('f-submit').addEventListener('click', () => submitEntry({
     { id: 'f-site', missing: 'साइट का नाम लिखें।' },
     { id: 'f-diesel', missing: 'डीज़ल भरवाया लिखें।' },
     { id: 'f-gen', missing: 'जनरेटर की रीडिंग लिखें।' },
+    { id: 'f-pct', missing: 'डीज़ल% लिखें।',
+      check: (v) => (Number(v) >= 0 && Number(v) <= 100 ? '' : 'डीज़ल% 0 से 100 के बीच लिखें।') },
   ],
-  build: (v) => ({ site: v['f-site'], diesel_filled: v['f-diesel'], generator_reading: v['f-gen'] }),
+  build: (v) => ({ site: v['f-site'], diesel_filled: v['f-diesel'], generator_reading: v['f-gen'], diesel_pct: v['f-pct'] }),
 }));
 
 /* ---------------- सर्विस ---------------- */
@@ -470,7 +484,8 @@ $('sites-search').addEventListener('input', renderSites);
 /* One line of values, whichever screen the entry came from. */
 const histVals = (e) => (e.kind === 'service'
   ? `<span class="tag svc">सर्विस</span> रीडिंग ${esc(e.service_reading ?? '')}`
-  : `डीज़ल ${esc(e.diesel_filled)} · जनरेटर ${esc(e.generator_reading)}`);
+  : `डीज़ल ${esc(e.diesel_filled)} · जनरेटर ${esc(e.generator_reading)}${
+      e.diesel_pct ? ` · ${esc(e.diesel_pct)}%` : ''}`);
 
 async function loadHistory() {
   const wrap = $('hist-list');
@@ -479,7 +494,7 @@ async function loadHistory() {
       <span class="d">${hhmm(q.taken_at)}</span>
       <span class="grow"><div class="truncate">${esc(q.site)}</div>
         <div class="vals">${histVals({ kind: q.kind, service_reading: q.service_reading,
-          diesel_filled: q.diesel_filled, generator_reading: q.generator_reading })}</div></span>
+          diesel_filled: q.diesel_filled, generator_reading: q.generator_reading, diesel_pct: q.diesel_pct })}</div></span>
       <span class="badge warn"><span class="dot"></span>फ़ोन में</span>
     </div>`).join('');
   wrap.innerHTML = local + '<p class="quiet t-13" style="padding-top:12px">लोड हो रहा है…</p>';

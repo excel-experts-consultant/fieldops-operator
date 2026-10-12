@@ -82,12 +82,28 @@ async function requireUser(request, env, role) {
   const session = await readToken(env, header.replace(/^Bearer\s+/i, ''));
   if (!session) return null;
   if (role && session.role !== role) return null;
-  const user = await env.DB.prepare(
-    'SELECT id, username, name, role, active, token_version FROM users WHERE id = ?',
-  ).bind(session.uid).first();
+  /*
+   * An operator's token is tied to the phone it was issued on, and that phone
+   * must still be approved. Checked on every call, in the same query as the
+   * user, so removing a phone in the console stops it at its next request.
+   * A token from before this rule carries no phone; the app's own id is used.
+   */
+  const sent = cleanDeviceId(request.headers.get('x-device-id'));
+  const did = session.did ? cleanDeviceId(session.did) : sent;
+  const user = await env.DB.prepare(`
+    SELECT u.id, u.username, u.name, u.role, u.active, u.token_version,
+           (SELECT status FROM devices WHERE employee_id = u.id AND device_id = ?2) AS device_status
+    FROM users u WHERE u.id = ?1
+  `).bind(session.uid, did).first();
   if (!user || !user.active) return null;
   // "Sign out all devices" bumps token_version, which retires every token issued before it.
   if (Number(session.tv || 0) !== Number(user.token_version || 0)) return null;
+  if (user.role === 'employee') {
+    if (!did || user.device_status !== 'approved') return null;
+    // A token copied onto another phone does not travel with it.
+    if (session.did && sent !== session.did) return null;
+  }
+  delete user.device_status;
   return user;
 }
 
@@ -120,19 +136,34 @@ const cleanDeviceId = (v) => {
   return /^[A-Za-z0-9._-]{8,64}$/.test(d) ? d : null;
 };
 
-/** Record a sign-in from this device, or bump its counters if already known. */
-async function recordDevice(env, request, body, userId) {
-  const id = cleanDeviceId(body.device_id);
-  if (!id) return;
+/**
+ * Record a sign-in from this phone and say whether it may be used.
+ * An account's first phone is approved by itself. Every phone after that is
+ * kept as 'pending' until the superadmin approves it. Deciding "first" and
+ * inserting is one statement, so two phones signing in at the same moment
+ * cannot both be taken as the first.
+ * Returns { status, label }, or null if the app sent no usable id.
+ */
+async function registerDevice(env, request, body, userId) {
+  const id = cleanDeviceId(body.device_id) || cleanDeviceId(request.headers.get('x-device-id'));
+  if (!id) return null;
   const ua = request.headers.get('user-agent') || '';
   const platform = body.platform === 'android' || /wv\)/.test(ua) ? 'android' : 'web';
   await env.DB.prepare(`
-    INSERT INTO devices (employee_id, device_id, label, platform)
-    VALUES (?1, ?2, ?3, ?4)
+    INSERT INTO devices (employee_id, device_id, label, platform, status, decided_at)
+    SELECT ?1, ?2, ?3, ?4,
+           CASE WHEN has_one THEN 'pending' ELSE 'approved' END,
+           CASE WHEN has_one THEN NULL ELSE datetime('now') END
+    FROM (SELECT EXISTS (SELECT 1 FROM devices WHERE employee_id = ?1 AND status = 'approved') AS has_one)
+    WHERE 1
     ON CONFLICT(employee_id, device_id) DO UPDATE SET
       last_seen = datetime('now'), logins = logins + 1,
       label = excluded.label, platform = excluded.platform
   `).bind(userId, id, deviceLabel(ua), platform).run();
+  const row = await env.DB.prepare(
+    'SELECT status, label FROM devices WHERE employee_id = ? AND device_id = ?',
+  ).bind(userId, id).first();
+  return row ? { id, status: row.status, label: row.label } : null;
 }
 
 /**
@@ -553,7 +584,7 @@ async function flushEntries(env) {
   try {
     for (let round = 0; round < 5; round++) {
       const { results } = await env.DB.prepare(`
-        SELECT id, kind, site_text, diesel_filled, generator_reading, service_reading,
+        SELECT id, kind, site_text, diesel_filled, generator_reading, diesel_pct, service_reading,
                entry_stamp, employee_name
         FROM entries
         WHERE sheet_status = 'pending' ORDER BY id LIMIT ?
@@ -577,6 +608,9 @@ async function flushEntries(env) {
             B: asSheetText(r.site_text),
             D: r.diesel_filled,
             F: r.generator_reading,
+            // Only when given: an entry from an older app has none, and writing
+            // a blank would wipe anything already in G.
+            ...(r.diesel_pct ? { G: r.diesel_pct } : {}),
             K: asSheetText(r.employee_name),
             L: asSheetText(code),
           };
@@ -665,9 +699,28 @@ async function route({ path, method, body, url, request, env, ctx }) {
     if (!user || !user.active || !(await verifyPassword(String(body.password || ''), user.password_hash))) {
       return fail('Username or password is wrong', 401);
     }
-    if (user.role === 'employee') await recordDevice(env, request, body, user.id);
+    let did;
+    if (user.role === 'employee') {
+      // Checked only after the password, so a stranger cannot file requests.
+      const dev = await registerDevice(env, request, body, user.id);
+      if (!dev) {
+        return json({ ok: false, code: 'no_device',
+          error: 'इस फ़ोन की पहचान नहीं हो पाई। ऐप दोबारा खोलकर कोशिश करें।' }, 400);
+      }
+      if (dev.status === 'pending') {
+        return json({ ok: false, code: 'device_pending', device: dev.label,
+          error: 'यह नया फ़ोन है। इस पर लॉग इन करने के लिए सुपरएडमिन की मंज़ूरी चाहिए। '
+            + 'मंज़ूरी का अनुरोध भेज दिया गया है — मंज़ूरी मिलने के बाद फिर से लॉग इन करें।' }, 403);
+      }
+      if (dev.status === 'rejected') {
+        return json({ ok: false, code: 'device_rejected', device: dev.label,
+          error: 'सुपरएडमिन ने इस फ़ोन को मंज़ूरी नहीं दी है। अपने मंज़ूर फ़ोन से लॉग इन करें या सुपरएडमिन से बात करें।' }, 403);
+      }
+      did = dev.id;
+    }
     const token = await signToken(env, {
       uid: user.id, role: user.role, tv: Number(user.token_version || 0),
+      ...(did ? { did } : {}),
       exp: Date.now() + 1000 * 60 * 60 * 24 * 30,
     });
     return json({
@@ -728,9 +781,10 @@ async function route({ path, method, body, url, request, env, ctx }) {
         env.DB.prepare("SELECT COUNT(*) AS n FROM entries WHERE sheet_status = 'pending'").first(),
         kvGet(env, 'sync'),
         env.DB.prepare(
-          'SELECT COUNT(*) AS n FROM (SELECT employee_id FROM devices GROUP BY employee_id HAVING COUNT(*) > 1)',
+          "SELECT COUNT(*) AS n FROM (SELECT employee_id FROM devices WHERE status = 'approved' GROUP BY employee_id HAVING COUNT(*) > 1)",
         ).first(),
       ]);
+      const requests = await env.DB.prepare("SELECT COUNT(*) AS n FROM devices WHERE status = 'pending'").first();
       let report = null;
       let reportError = null;
       try { report = await getReport(env); } catch (err) { reportError = err.message; }
@@ -739,6 +793,7 @@ async function route({ path, method, body, url, request, env, ctx }) {
         admin: { id: admin.id, name: admin.name, username: admin.username },
         employees: emps.n, entries_today: today.n, pending: pending.n, sync,
         multi_device: multi.n,
+        device_requests: requests.n,
         sites: report ? report.sites.length : null,
         report_fetched_at: report?.fetched_at || null,
         report_error: report?.error || reportError,
@@ -766,7 +821,8 @@ async function route({ path, method, body, url, request, env, ctx }) {
       const { results } = await env.DB.prepare(`
         SELECT u.id, u.name, u.username, u.phone, u.active,
                (SELECT COUNT(*) FROM site_access a WHERE a.employee_id = u.id) AS sites,
-               (SELECT COUNT(*) FROM devices d WHERE d.employee_id = u.id) AS devices,
+               (SELECT COUNT(*) FROM devices d WHERE d.employee_id = u.id AND d.status = 'approved') AS devices,
+               (SELECT COUNT(*) FROM devices d WHERE d.employee_id = u.id AND d.status = 'pending') AS device_requests,
                (SELECT MAX(d.last_seen) FROM devices d WHERE d.employee_id = u.id) AS last_seen
         FROM users u
         WHERE u.role = 'employee'
@@ -822,6 +878,7 @@ async function route({ path, method, body, url, request, env, ctx }) {
       const q = url.searchParams;
       const search = likeTerm(q.get('q'));
       const onlyMulti = q.get('multi') === '1';
+      const status = ['approved', 'pending', 'rejected'].includes(q.get('status')) ? q.get('status') : null;
       const limit = Math.min(200, Math.max(1, Number(q.get('limit')) || 100));
       const offset = Math.max(0, Number(q.get('offset')) || 0);
 
@@ -831,18 +888,22 @@ async function route({ path, method, body, url, request, env, ctx }) {
                           OR lower(u.username) LIKE '%' || ?1 || '%' ESCAPE '\\'
                           OR lower(COALESCE(d.label, '')) LIKE '%' || ?1 || '%' ESCAPE '\\')
           AND (?2 = 0 OR d.employee_id IN (
-                SELECT employee_id FROM devices GROUP BY employee_id HAVING COUNT(*) > 1))`;
-      const args = [search, onlyMulti ? 1 : 0];
+                SELECT employee_id FROM devices WHERE status = 'approved'
+                GROUP BY employee_id HAVING COUNT(*) > 1))
+          AND (?3 IS NULL OR d.status = ?3)`;
+      const args = [search, onlyMulti ? 1 : 0, status];
 
       const [{ results }, count, perEmp, sharedIds] = await Promise.all([
         env.DB.prepare(`
           SELECT d.employee_id, d.device_id, d.label, d.platform, d.first_seen, d.last_seen, d.logins,
-                 u.name, u.username, u.active
-          ${where} ORDER BY d.last_seen DESC LIMIT ?3 OFFSET ?4
+                 d.status, d.decided_at, u.name, u.username, u.active
+          ${where}
+          ORDER BY (d.status = 'pending') DESC, d.last_seen DESC, d.employee_id, d.device_id
+          LIMIT ?4 OFFSET ?5
         `).bind(...args, limit, offset).all(),
         env.DB.prepare(`SELECT COUNT(*) AS n ${where}`).bind(...args).first(),
         env.DB.prepare(
-          'SELECT employee_id, COUNT(*) AS n FROM devices GROUP BY employee_id HAVING COUNT(*) > 1',
+          "SELECT employee_id, COUNT(*) AS n FROM devices WHERE status = 'approved' GROUP BY employee_id HAVING COUNT(*) > 1",
         ).all(),
         env.DB.prepare(
           'SELECT device_id FROM devices GROUP BY device_id HAVING COUNT(DISTINCT employee_id) > 1',
@@ -858,6 +919,7 @@ async function route({ path, method, body, url, request, env, ctx }) {
         total: count.n, limit, offset,
         has_more: offset + results.length < count.n,
         multi_accounts: many.size,
+        pending_requests: (await env.DB.prepare("SELECT COUNT(*) AS n FROM devices WHERE status = 'pending'").first()).n,
       });
     }
 
@@ -865,22 +927,46 @@ async function route({ path, method, body, url, request, env, ctx }) {
     const devMatch = /^\/admin\/devices\/(\d+)$/.exec(path);
     if (devMatch && method === 'GET') {
       const { results } = await env.DB.prepare(`
-        SELECT device_id, label, platform, first_seen, last_seen, logins
-        FROM devices WHERE employee_id = ? ORDER BY last_seen DESC
+        SELECT device_id, label, platform, first_seen, last_seen, logins, status, decided_at
+        FROM devices WHERE employee_id = ? ORDER BY (status = 'pending') DESC, last_seen DESC
       `).bind(Number(devMatch[1])).all();
       return json({ ok: true, devices: results });
     }
 
-    /* Forget one device. The phone is signed out the next time it calls. */
+    /*
+     * Approve or reject a phone. Approving lets the operator sign in on it.
+     * Rejecting keeps the phone on record, so signing in again from it is
+     * refused without filing a fresh request each time; it can still be
+     * approved later. Either one can be applied to a phone in any state.
+     */
+    const decide = /^\/admin\/devices\/(\d+)\/(approve|reject)$/.exec(path);
+    if (decide && method === 'POST') {
+      const id = Number(decide[1]);
+      const deviceId = cleanDeviceId(body.device_id);
+      if (!deviceId) return fail('Which device?', 400);
+      const to = decide[2] === 'approve' ? 'approved' : 'rejected';
+      const row = await env.DB.prepare(
+        'SELECT d.status, u.name FROM devices d JOIN users u ON u.id = d.employee_id WHERE d.employee_id = ? AND d.device_id = ?',
+      ).bind(id, deviceId).first();
+      if (!row) return fail('That phone is no longer on record', 404);
+      await env.DB.prepare(
+        "UPDATE devices SET status = ?, decided_at = datetime('now') WHERE employee_id = ? AND device_id = ?",
+      ).bind(to, id, deviceId).run();
+      return json({ ok: true, status: to, name: row.name, was: row.status });
+    }
+
+    /*
+     * Remove one phone. Only that phone is signed out, at its next request;
+     * the operator's other approved phones keep working. If it was their only
+     * approved phone, the next phone they sign in on is approved by itself,
+     * as a brand-new account's first phone would be.
+     */
     if (devMatch && method === 'DELETE') {
       const id = Number(devMatch[1]);
       const deviceId = cleanDeviceId(body.device_id);
       if (!deviceId) return fail('Which device?', 400);
-      await env.DB.batch([
-        env.DB.prepare('DELETE FROM devices WHERE employee_id = ? AND device_id = ?').bind(id, deviceId),
-        env.DB.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').bind(id),
-      ]);
-      return json({ ok: true, signed_out_all: true });
+      await env.DB.prepare('DELETE FROM devices WHERE employee_id = ? AND device_id = ?').bind(id, deviceId).run();
+      return json({ ok: true });
     }
 
     /* Sign this employee out everywhere; every existing token stops working. */
@@ -1093,7 +1179,7 @@ async function route({ path, method, body, url, request, env, ctx }) {
 
       const [{ results }, count] = await Promise.all([
         env.DB.prepare(`
-          SELECT id, kind, site_text, diesel_filled, generator_reading, service_reading,
+          SELECT id, kind, site_text, diesel_filled, generator_reading, diesel_pct, service_reading,
                  entry_stamp, sheet_status, sheet_row, created_at, employee_name
           FROM entries ${where}
           ORDER BY id DESC LIMIT ?7 OFFSET ?8
@@ -1154,6 +1240,10 @@ async function route({ path, method, body, url, request, env, ctx }) {
       const site = String(body.site || '').trim().slice(0, 200);
       const diesel = kind === 'service' ? '' : String(body.diesel_filled ?? '').trim();
       const gen = kind === 'service' ? '' : String(body.generator_reading ?? '').trim();
+      // डीज़ल% — required by the app, but an older app (or an entry queued on a
+      // phone before the update) sends none, and that must not be refused:
+      // the phone would drop it.
+      const pct = kind === 'service' ? '' : String(body.diesel_pct ?? '').trim().replace(/\s*%$/, '');
       const service = kind === 'service' ? String(body.service_reading ?? '').trim() : null;
       const NUM = /^-?\d+(\.\d+)?$/;
       if (!site) return fail('साइट का नाम लिखें');
@@ -1164,6 +1254,9 @@ async function route({ path, method, body, url, request, env, ctx }) {
         if (!diesel) return fail('डीज़ल भरवाया लिखें');
         if (!gen) return fail('जनरेटर की रीडिंग लिखें');
         if (!NUM.test(diesel) || !NUM.test(gen)) return fail('रीडिंग में सिर्फ़ नंबर लिखें');
+        if (pct && (!NUM.test(pct) || Number(pct) < 0 || Number(pct) > 100)) {
+          return fail('डीज़ल% 0 से 100 के बीच लिखें');
+        }
       }
 
       if (body.client_uuid) {
@@ -1180,12 +1273,22 @@ async function route({ path, method, body, url, request, env, ctx }) {
       const row = await env.DB.prepare(`
         INSERT INTO entries
           (employee_id, employee_name, kind, site_text, diesel_filled, generator_reading,
-           service_reading, entry_stamp, client_uuid)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
-      `).bind(emp.id, emp.name, kind, site, diesel, gen, service, stampAt(when, env.TIMEZONE),
+           diesel_pct, service_reading, entry_stamp, client_uuid)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+      `).bind(emp.id, emp.name, kind, site, diesel, gen, pct || null, service, stampAt(when, env.TIMEZONE),
               body.client_uuid ? String(body.client_uuid) : null).first();
 
-      const r = await flushEntries(env);
+      /*
+       * The entry is in D1 now, which is what makes it safe — the sheet is a
+       * copy. So the operator is never made to wait on Google: we give the
+       * write a couple of seconds, long enough that the usual case can say
+       * "दर्ज हो गया", then answer regardless and let the rest finish in the
+       * background. A slow or stuck Google used to hold this response open,
+       * leaving the button on "जमा हो रहा है…" with the entry already saved.
+       */
+      const flush = flushEntries(env).catch((err) => ({ error: err.message }));
+      ctx.waitUntil(flush);
+      const r = await Promise.race([flush, sleep(2500).then(() => ({ slow: true }))]);
       if (r.busy) kickFlush(env, ctx, 1500); // someone else is writing; make sure ours is not left behind
       const mine = await env.DB.prepare('SELECT sheet_status FROM entries WHERE id = ?').bind(row.id).first();
       return json({ ok: true, id: row.id, sheet: mine.sheet_status });
@@ -1193,7 +1296,7 @@ async function route({ path, method, body, url, request, env, ctx }) {
 
     if (path === '/emp/entries' && method === 'GET') {
       const { results } = await env.DB.prepare(`
-        SELECT id, kind, site_text, diesel_filled, generator_reading, service_reading,
+        SELECT id, kind, site_text, diesel_filled, generator_reading, diesel_pct, service_reading,
                entry_stamp, sheet_status
         FROM entries WHERE employee_id = ? ORDER BY id DESC LIMIT 50
       `).bind(emp.id).all();
