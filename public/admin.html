@@ -78,6 +78,12 @@
     font-family: var(--display); font-size: 11px; font-weight: 700; letter-spacing: .04em;
     color: #6b5a12; background: #fff7cc; padding: 6px 14px; border-bottom: 1px solid #f1e4a3;
   }
+  .more-row {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 10px 14px; font-size: 12.5px; color: var(--dim-light);
+    border-top: 1px solid var(--line); background: var(--card-2);
+  }
+  .more-row b { color: var(--ink); }
   .empty-right { padding: 60px 24px; text-align: center; color: var(--dim-light); font-size: 13.5px; }
   .flagged { padding: 10px 14px; border-top: 1px solid var(--mist-100); background: #fff9f2; font-size: 12.5px; }
   .flagged b { font-family: var(--display); }
@@ -128,6 +134,12 @@
   .modal .sheet-foot .spring { margin-left: auto; }
   .acct-block { border-top: 1px solid var(--mist-100); padding-top: 14px; margin-top: 16px; }
   /* `button.quiet-btn` in app.css would otherwise win on specificity */
+  .pager {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 16px; border-top: 1px solid var(--mist-100); background: #fbfcfc;
+  }
+  .pager .spring { margin-left: auto; }
+  .pager button[disabled] { opacity: .35; cursor: not-allowed; }
   .kind {
     font-family: var(--display); font-size: 11px; font-weight: 600;
     padding: 2px 7px; border-radius: 20px; white-space: nowrap;
@@ -142,6 +154,11 @@
   }
   .dev-tag.android { background: rgba(46,158,104,.12); color: #1d6b48; }
   tr.flag td { background: #fff9ec; }
+  tr.req td { background: #fff3e0; }
+  tr.req td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+  .ok-btn { color: var(--ok) !important; border-color: currentColor !important; font-weight: 600; }
+  .stat.ask { cursor: pointer; }
+  .stat.ask.alert .v { color: var(--warn); }
   tr.flag:hover td { background: #fff4de; }
   button.quiet-btn.danger-btn { color: var(--bad); margin-left: 10px; }
   button.quiet-btn.danger-btn:hover { color: #fff; background: var(--bad); }
@@ -185,6 +202,7 @@
       <div class="stat"><div class="k">Entries today</div><div class="v" id="s-today">—</div></div>
       <div class="stat" id="s-pending-wrap"><div class="k">Waiting for sheet</div><div class="v" id="s-pending">—</div></div>
       <div class="stat"><div class="k">FL Rep read at</div><div class="v small" id="s-flrep">—</div></div>
+      <div class="stat ask" id="s-req-wrap" title="Open the phones waiting for your approval"><div class="k">Phones to approve</div><div class="v" id="s-req">—</div></div>
       <div class="stat" id="s-multi-wrap"><div class="k">On 2+ devices</div><div class="v" id="s-multi">—</div></div>
       <div class="stat"><div class="k">Column L code</div><div class="v small" id="s-code">—</div></div>
     </div>
@@ -294,18 +312,41 @@
         <div class="panel">
           <div class="toolbar">
             <select id="ent-emp"><option value="">All employees</option></select>
-            <span class="t-12 quiet" id="ent-count"></span>
+            <select id="ent-kind">
+              <option value="">Both screens</option>
+              <option value="filling">डीज़ल भरना</option>
+              <option value="service">सर्विस</option>
+            </select>
+            <label class="t-12 quiet" for="ent-from">From</label>
+            <input type="date" id="ent-from" style="width:auto;min-width:0">
+            <label class="t-12 quiet" for="ent-to">To</label>
+            <input type="date" id="ent-to" style="width:auto;min-width:0">
+            <input type="search" id="ent-q" placeholder="Site or employee" style="min-width:170px">
+            <label class="row t-13" style="gap:7px;cursor:pointer">
+              <input type="checkbox" id="ent-pending" style="width:auto"> Only waiting
+            </label>
+            <button class="ghost small" id="ent-reset">Reset</button>
             <span style="margin-left:auto"></span>
             <button class="ghost" id="sync-go">Write waiting entries to the sheet now</button>
           </div>
           <div class="panel-body flush">
             <div class="table-scroll" style="max-height:66vh">
               <table>
-                <thead><tr><th>Time (A)</th><th>Employee (K)</th><th>Screen</th><th>Site (B)</th><th>डीज़ल भरवाया (D)</th><th>जनरेटर की रीडिंग (F)</th><th>सर्विस के बाद (J)</th><th>Sheet</th></tr></thead>
+                <thead><tr><th>Time (A)</th><th>Employee (K)</th><th>Screen</th><th>Site (B)</th><th>डीज़ल भरवाया (D)</th><th>जनरेटर की रीडिंग (F)</th><th>डीज़ल% (G)</th><th>सर्विस के बाद (J)</th><th>Sheet</th></tr></thead>
                 <tbody id="ent-body"></tbody>
               </table>
             </div>
           </div>
+            <div class="pager">
+              <button class="ghost small" id="ent-prev">&larr; Newer</button>
+              <span class="t-13" id="ent-count">&mdash;</span>
+              <button class="ghost small" id="ent-next">Older &rarr;</button>
+              <span class="spring"></span>
+              <label class="t-12 quiet" for="ent-size">Rows</label>
+              <select id="ent-size" style="width:auto">
+                <option>50</option><option selected>100</option><option>200</option>
+              </select>
+            </div>
         </div>
       </section>
 
@@ -314,28 +355,40 @@
         <div class="page-head">
           <div>
             <h1>Devices</h1>
-            <p>One row per phone an account has signed in on. The id is made by the app at install
-               and kept in its own storage, so reinstalling counts as a new device.</p>
+            <p>One row per phone an account has signed in on. An operator's first phone works
+               straight away; <b>any other phone waits here until you approve it</b>. The id is made
+               by the app at install, so reinstalling or clearing the app's data counts as a new phone.</p>
           </div>
         </div>
         <div class="notice hidden" id="dev-note"></div>
         <div class="panel">
           <div class="toolbar">
             <input type="search" id="dev-search" placeholder="Search name, username or device">
+            <select id="dev-status" style="width:auto">
+              <option value="">All phones</option>
+              <option value="pending">Waiting for approval</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
             <label class="row t-13" style="gap:7px;cursor:pointer">
               <input type="checkbox" id="dev-only-multi" style="width:auto">
               Only accounts on 2 or more devices
             </label>
-            <span class="t-12 quiet" id="dev-count"></span>
+            <span class="t-12 quiet" id="dev-flagged"></span>
           </div>
           <div class="panel-body flush">
             <div class="table-scroll" style="max-height:66vh">
               <table>
-                <thead><tr><th>Employee</th><th>Username</th><th>Device</th><th>App</th><th>First seen</th><th>Last seen</th><th>Logins</th><th></th></tr></thead>
+                <thead><tr><th>Employee</th><th>Username</th><th>Device</th><th>Status</th><th>App</th><th>First seen</th><th>Last seen</th><th>Logins</th><th></th></tr></thead>
                 <tbody id="dev-body"></tbody>
               </table>
             </div>
           </div>
+            <div class="pager">
+              <button class="ghost small" id="dev-prev">&larr; Newer</button>
+              <span class="t-13" id="dev-count">&mdash;</span>
+              <button class="ghost small" id="dev-next">Older &rarr;</button>
+            </div>
         </div>
       </section>
     </div>
@@ -394,6 +447,9 @@ const $ = (id) => document.getElementById(id);
 const note = (el, text, kind) => { el.className = 'notice ' + (kind || ''); el.textContent = text; el.classList.remove('hidden'); };
 const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 const hhmm = (ms) => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+/* One timer per input: a keystroke cancels the pending draw, so holding a key
+   down costs one render instead of one per character. */
+const debounce = (fn, ms = 300) => { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; };
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 if (me) $('who').textContent = me.name;
 
@@ -431,7 +487,10 @@ async function loadSummary() {
     $('s-flrep').textContent = d.report_fetched_at ? hhmm(d.report_fetched_at) : '—';
     $('s-multi').textContent = d.multi_device ?? 0;
     $('s-multi-wrap').classList.toggle('alert', (d.multi_device || 0) > 0);
-    $('tally-dev').textContent = d.multi_device || '';
+    $('s-req').textContent = d.device_requests ?? 0;
+    $('s-req-wrap').classList.toggle('alert', (d.device_requests || 0) > 0);
+    // the Devices tab counts what needs you: phones waiting for approval
+    $('tally-dev').textContent = d.device_requests ? d.device_requests + ' to approve' : '';
     $('s-code').textContent = d.entry_code;
     if (d.report_error) note($('alloc-err'), 'Could not read FL Rep: ' + d.report_error, 'bad');
     const sync = d.sync;
@@ -476,12 +535,33 @@ function setMode(m) {
   $('mode-emp').setAttribute('aria-pressed', m === 'emp');
   $('mode-site').setAttribute('aria-pressed', m === 'site');
   $('left-search').value = ''; $('right-search').value = '';
+  resetCap('left'); resetCap('right');
   $('left-group').classList.toggle('hidden', m === 'emp');
   $('right-group').classList.toggle('hidden', m === 'site');
   renderLeft(); renderRight();
 }
 $('mode-emp').onclick = () => setMode('emp');
 $('mode-site').onclick = () => setMode('site');
+
+/* The sheet can hold 2,000 sites and the crew 400 people. Building that many
+   rows on every keystroke is what makes a page feel broken, so each list draws
+   a capped window and offers the rest on a button. Filtering, counting and
+   "Tick all shown" still work over every match, not just the drawn rows. */
+const CAP = 300;
+const cap = { left: CAP, right: CAP, crew: 150 };
+const resetCap = (k) => { cap[k] = k === 'crew' ? 150 : CAP; };
+
+function moreRow(side, total, shown) {
+  if (shown >= total) return '';
+  const step = Math.min(side === 'crew' ? 150 : CAP, total - shown);
+  return `<div class="more-row">Showing <b>${shown.toLocaleString()}</b> of ${total.toLocaleString()}
+    <button class="quiet-btn" data-more="${side}">Show ${step} more</button>
+    <button class="quiet-btn" data-more="${side}" data-all="1">Show all ${total.toLocaleString()}</button></div>`;
+}
+function showMore(side, all, total, redraw) {
+  cap[side] = all ? total : cap[side] + (side === 'crew' ? 150 : CAP);
+  redraw();
+}
 
 function filteredSites(q, group) {
   q = norm(q);
@@ -499,23 +579,26 @@ function renderLeft() {
     $('left-title').textContent = 'Employees';
     $('left-sub').textContent = `${EMPS.filter((u) => u.active).length} active · pick one to set their sites`;
     $('left-search').placeholder = 'Search name or username';
-    const list = filteredEmps($('left-search').value);
+    const all = filteredEmps($('left-search').value);
+    const list = all.slice(0, cap.left);
     wrap.innerHTML = list.length ? list.map((u) => `
       <div class="pick choice ${u.id === sel ? 'sel' : ''} ${u.active ? '' : 'off'}" data-key="${u.id}">
         <span class="grow"><div class="truncate">${esc(u.name)}</div><div class="sub">${esc(u.username)}${u.active ? '' : ' · disabled'}</div></span>
         <span class="count ${u.sites ? '' : 'zero'}">${plural(u.sites, 'site', 'sites')}</span>
-      </div>`).join('')
+      </div>`).join('') + moreRow('left', all.length, list.length)
       : `<div class="pick empty">${EMPS.length ? 'No one matches.' : 'No employees yet — add them under Employees.'}</div>`;
   } else {
     $('left-title').textContent = 'Sites in FL Rep';
     $('left-sub').textContent = `${SITES.length} sites · pick one to choose who sees it`;
     $('left-search').placeholder = 'Search site, code or section';
-    const list = filteredSites($('left-search').value, $('left-group').value);
+    const all = filteredSites($('left-search').value, $('left-group').value);
+    const list = all.slice(0, cap.left);
     wrap.innerHTML = list.length ? list.map((s) => `
       <div class="pick choice ${s.name === sel ? 'sel' : ''}" data-key="${esc(s.name)}">
         <span class="grow"><div class="truncate">${esc(s.sl)}. ${esc(s.name)}</div><div class="sub">${esc(s.group || '')}</div></span>
         <span class="count ${s.holders ? '' : 'zero'}">${plural(s.holders, 'person', 'people')}</span>
-      </div>`).join('') : '<div class="pick empty">No site matches.</div>';
+      </div>`).join('') + moreRow('left', all.length, list.length)
+      : '<div class="pick empty">No site matches.</div>';
   }
 }
 
@@ -536,7 +619,8 @@ function renderRight() {
     $('right-sub').textContent = `${u?.username || ''} sees only these, in the app's मेरी साइट्स screen.`;
     $('right-search').placeholder = 'Search site, code or section';
     const q = $('right-search').value, g = $('right-group').value;
-    const list = filteredSites(q, g);
+    const all = filteredSites(q, g);
+    const list = all.slice(0, cap.right);
     let group = null;
     wrap.innerHTML = list.length ? list.map((s) => {
       const head = !q && s.group !== group ? `<div class="grp-row">${esc(s.group || 'No section')}</div>` : '';
@@ -546,7 +630,8 @@ function renderRight() {
         <span class="grow truncate">${esc(s.sl)}. ${esc(s.name)}</span>
         <span class="meta">${s.holders ? plural(s.holders, 'person', 'people') : ''}</span>
       </label>`;
-    }).join('') : '<div class="pick empty">No site matches.</div>';
+    }).join('') + moreRow('right', all.length, list.length)
+      : '<div class="pick empty">No site matches.</div>';
 
     const parts = [];
     if (flagged.missing.length) {
@@ -565,13 +650,15 @@ function renderRight() {
     $('right-title').textContent = s ? `${s.sl}. ${s.name}` : sel;
     $('right-sub').textContent = `${s?.group ? s.group + ' · ' : ''}tick everyone who should see this site.`;
     $('right-search').placeholder = 'Search name or username';
-    const list = filteredEmps($('right-search').value);
+    const all = filteredEmps($('right-search').value);
+    const list = all.slice(0, cap.right);
     wrap.innerHTML = list.length ? list.map((u) => `
       <label class="pick ${u.active ? '' : 'off'}">
         <input type="checkbox" data-key="${u.id}" ${ticked.has(u.id) ? 'checked' : ''}>
         <span class="grow truncate">${esc(u.name)} <span class="sub">${esc(u.username)}${u.active ? '' : ' · disabled'}</span></span>
         <span class="meta">${plural(u.sites, 'site', 'sites')}</span>
-      </label>`).join('') : '<div class="pick empty">No one matches.</div>';
+      </label>`).join('') + moreRow('right', all.length, list.length)
+      : '<div class="pick empty">No one matches.</div>';
     $('flagged').classList.add('hidden');
   }
   renderBar();
@@ -598,6 +685,7 @@ async function choose(key) {
   if (key === sel) return;
   if (dirty() && !confirm('You have unsaved changes. Discard them?')) return;
   sel = key; saved = new Set(); ticked = new Set(); flagged = { missing: [], renamed: [] };
+  resetCap('right');
   $('send-msg').textContent = '';
   renderLeft();
   $('right-list').innerHTML = '<div class="empty-right">Loading…</div>';
@@ -621,10 +709,23 @@ $('left-list').addEventListener('click', (e) => {
   const row = e.target.closest('.pick.choice');
   if (row) choose(mode === 'emp' ? Number(row.dataset.key) : row.dataset.key);
 });
-$('left-search').addEventListener('input', renderLeft);
-$('left-group').addEventListener('change', renderLeft);
-$('right-search').addEventListener('input', renderRight);
-$('right-group').addEventListener('change', renderRight);
+const redrawLeft = () => { resetCap('left'); renderLeft(); };
+const redrawRight = () => { resetCap('right'); renderRight(); };
+$('left-search').addEventListener('input', debounce(redrawLeft, 160));
+$('left-group').addEventListener('change', redrawLeft);
+$('right-search').addEventListener('input', debounce(redrawRight, 160));
+$('right-group').addEventListener('change', redrawRight);
+$('left-list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-more]');
+  if (b) showMore('left', b.dataset.all, filteredLeftCount(), renderLeft);
+});
+$('right-list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-more]');
+  if (b) showMore('right', b.dataset.all, shownKeys().length, renderRight);
+});
+const filteredLeftCount = () => (mode === 'emp'
+  ? filteredEmps($('left-search').value).length
+  : filteredSites($('left-search').value, $('left-group').value).length);
 
 const keyOf = (cb) => (mode === 'emp' ? cb.dataset.key : Number(cb.dataset.key));
 document.querySelector('.right').addEventListener('change', (e) => {
@@ -633,11 +734,16 @@ document.querySelector('.right').addEventListener('change', (e) => {
   cb.checked ? ticked.add(keyOf(cb)) : ticked.delete(keyOf(cb));
   renderBar();
 });
+/* Every row the current filter matches — including ones past the draw cap, so
+   "Tick all shown" still means the whole filtered route. */
+function shownKeys() {
+  return mode === 'emp'
+    ? filteredSites($('right-search').value, $('right-group').value).map((s) => s.name)
+    : filteredEmps($('right-search').value).map((u) => u.id);
+}
 function tickShown(on) {
-  $('right-list').querySelectorAll('input[type=checkbox][data-key]').forEach((cb) => {
-    cb.checked = on;
-    on ? ticked.add(keyOf(cb)) : ticked.delete(keyOf(cb));
-  });
+  for (const k of shownKeys()) on ? ticked.add(k) : ticked.delete(k);
+  $('right-list').querySelectorAll('input[type=checkbox][data-key]').forEach((cb) => { cb.checked = on; });
   renderBar();
 }
 $('tick-shown').onclick = () => tickShown(true);
@@ -664,7 +770,8 @@ $('save-go').addEventListener('click', async () => {
 /* ================================================================ employees */
 function renderCrew() {
   const q = norm($('crew-search').value);
-  const list = EMPS.filter((u) => !q || norm(`${u.name} ${u.username} ${u.phone || ''}`).includes(q));
+  const all = EMPS.filter((u) => !q || norm(`${u.name} ${u.username} ${u.phone || ''}`).includes(q));
+  const list = all.slice(0, cap.crew);
   $('crew-count').textContent = `· ${EMPS.filter((u) => u.active).length} active of ${EMPS.length}`;
   $('staff-body').innerHTML = list.length ? list.map((u) => `
     <tr>
@@ -672,17 +779,31 @@ function renderCrew() {
       <td class="mono-cell t-13">${esc(u.username)}</td>
       <td class="mono-cell t-13 quiet">${esc(u.phone || '—')}</td>
       <td class="mono-cell"><button class="quiet-btn" data-sites="${u.id}">${plural(u.sites, 'site', 'sites')}</button></td>
-      <td class="mono-cell"><button class="quiet-btn ${u.devices > 1 ? 'warn-btn' : ''}" data-dev="${u.id}" data-name="${esc(u.name)}">${
-        u.devices ? plural(u.devices, 'device', 'devices') : '<span class="quiet">none</span>'}</button></td>
+      <td class="mono-cell"><button class="quiet-btn ${u.devices > 1 || u.device_requests ? 'warn-btn' : ''}" data-dev="${u.id}" data-name="${esc(u.name)}">${
+        u.devices ? plural(u.devices, 'device', 'devices') : '<span class="quiet">none</span>'}${
+        u.device_requests ? ` · <b>${u.device_requests} to approve</b>` : ''}</button></td>
       <td><span class="badge ${u.active ? 'ok' : 'idle'}"><span class="dot"></span>${u.active ? 'active' : 'disabled'}</span></td>
       <td style="text-align:right;white-space:nowrap">
         <button class="quiet-btn" data-reset="${u.id}">Reset password</button>
         <button class="quiet-btn" data-toggle="${u.id}" data-active="${u.active}">${u.active ? 'Disable' : 'Enable'}</button>
         <button class="quiet-btn danger-btn" data-del="${u.id}" data-name="${esc(u.name)}" data-user="${esc(u.username)}" data-nsites="${u.sites}">Delete</button>
       </td>
-    </tr>`).join('') : `<tr class="empty-row"><td colspan="7">${EMPS.length ? 'No one matches.' : 'No employee logins yet.'}</td></tr>`;
+    </tr>`).join('') + (list.length < all.length
+      ? `<tr class="empty-row"><td colspan="7"><div class="more-row" style="border:0;background:none;padding:4px 0">
+          Showing <b>${list.length}</b> of ${all.length.toLocaleString()}
+          <button class="quiet-btn" data-crew-more="1">Show 150 more</button>
+          <button class="quiet-btn" data-crew-more="1" data-all="1">Show all ${all.length.toLocaleString()}</button>
+         </div></td></tr>` : '')
+    : `<tr class="empty-row"><td colspan="7">${EMPS.length ? 'No one matches.' : 'No employee logins yet.'}</td></tr>`;
 }
-$('crew-search').addEventListener('input', renderCrew);
+$('crew-search').addEventListener('input', debounce(() => { resetCap('crew'); renderCrew(); }, 160));
+$('staff-body').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-crew-more]');
+  if (!b) return;
+  const q = norm($('crew-search').value);
+  const total = EMPS.filter((u) => !q || norm(`${u.name} ${u.username} ${u.phone || ''}`).includes(q)).length;
+  showMore('crew', b.dataset.all, total, renderCrew);
+});
 
 $('staff-go').addEventListener('click', async () => {
   const btn = $('staff-go');
@@ -706,9 +827,9 @@ $('staff-body').addEventListener('click', async (e) => {
   if (dev) {
     document.querySelector('#nav [data-tab=devices]').click();
     $('dev-only-multi').checked = false;
+    $('dev-status').value = '';
     $('dev-search').value = dev.dataset.name;
-    await loadDevices();
-    renderDevices();
+    await loadDevices(true);
   }
   if (sites) {
     document.querySelector('#nav [data-tab=allocate]').click();
@@ -807,14 +928,38 @@ $('bulk-csv').addEventListener('click', () => {
 });
 
 /* ================================================================ entries */
-async function loadEntries() {
-  const emp = $('ent-emp').value;
-  $('ent-body').innerHTML = '<tr class="empty-row"><td colspan="8">Loading…</td></tr>';
+/* The server filters, counts and pages, so the browser only ever holds one
+   page. Opening a year of entries costs the same as opening today. */
+const entState = { offset: 0, limit: 100, total: 0 };
+
+function entQuery() {
+  const p = new URLSearchParams();
+  if ($('ent-emp').value) p.set('employee_id', $('ent-emp').value);
+  if ($('ent-kind').value) p.set('kind', $('ent-kind').value);
+  if ($('ent-from').value) p.set('from', $('ent-from').value);
+  if ($('ent-to').value) p.set('to', $('ent-to').value);
+  if ($('ent-q').value.trim()) p.set('q', $('ent-q').value.trim());
+  if ($('ent-pending').checked) p.set('status', 'pending');
+  p.set('limit', entState.limit);
+  p.set('offset', entState.offset);
+  return p.toString();
+}
+
+/* Only the newest request may draw. Switching tabs, typing, or changing a
+   filter can start a second load while the first is still out; without this
+   a slow earlier answer could land last and overwrite the right one. */
+const latest = { entries: 0, devices: 0 };
+
+async function loadEntries(resetPage) {
+  const mine = ++latest.entries;
+  if (resetPage) entState.offset = 0;
+  $('ent-body').innerHTML = '<tr class="empty-row"><td colspan="9">Loading…</td></tr>';
   try {
-    const { entries } = await api('/admin/entries' + (emp ? '?employee_id=' + emp : ''));
-    $('ent-count').textContent = entries.length >= 300 ? 'Latest 300' : plural(entries.length, 'entry', 'entries');
+    const d = await api('/admin/entries?' + entQuery());
+    if (mine !== latest.entries) return;
+    entState.total = d.total;
     const dash = '<span class="quiet">—</span>';
-    $('ent-body').innerHTML = entries.length ? entries.map((e) => {
+    $('ent-body').innerHTML = d.entries.length ? d.entries.map((e) => {
       const svc = e.kind === 'service';
       return `
       <tr>
@@ -824,19 +969,47 @@ async function loadEntries() {
         <td>${esc(e.site_text)}</td>
         <td class="mono-cell">${svc ? dash : esc(e.diesel_filled)}</td>
         <td class="mono-cell">${svc ? dash : esc(e.generator_reading)}</td>
+        <td class="mono-cell">${svc || !e.diesel_pct ? dash : esc(e.diesel_pct) + '%'}</td>
         <td class="mono-cell">${svc ? esc(e.service_reading ?? '') : dash}</td>
         <td>${e.sheet_status === 'synced'
           ? `<span class="badge ok"><span class="dot"></span>row ${esc((e.sheet_row || '').split('!A')[1] || '')}</span>`
           : '<span class="badge warn"><span class="dot"></span>waiting</span>'}</td>
-      </tr>`; }).join('') : '<tr class="empty-row"><td colspan="8">No entries yet.</td></tr>';
-  } catch (e) { $('ent-body').innerHTML = `<tr class="empty-row"><td colspan="8">${esc(e.message)}</td></tr>`; }
+      </tr>`; }).join('')
+      : `<tr class="empty-row"><td colspan="9">${entState.offset ? 'No more entries.' : 'Nothing matches these filters.'}</td></tr>`;
+
+    const from = d.total ? entState.offset + 1 : 0;
+    const to = entState.offset + d.entries.length;
+    $('ent-count').innerHTML = d.total
+      ? `<b>${from}–${to}</b> of ${d.total.toLocaleString()}`
+      : 'No entries';
+    $('ent-prev').disabled = entState.offset === 0;
+    $('ent-next').disabled = !d.has_more;
+  } catch (e) {
+    if (mine === latest.entries) $('ent-body').innerHTML = `<tr class="empty-row"><td colspan="9">${esc(e.message)}</td></tr>`;
+  }
 }
-$('ent-emp').addEventListener('change', loadEntries);
+
+
+['ent-emp', 'ent-kind', 'ent-from', 'ent-to', 'ent-pending'].forEach((id) =>
+  $(id).addEventListener('change', () => loadEntries(true)));
+$('ent-q').addEventListener('input', debounce(() => loadEntries(true), 350));
+$('ent-size').addEventListener('change', () => { entState.limit = Number($('ent-size').value); loadEntries(true); });
+$('ent-prev').addEventListener('click', () => {
+  entState.offset = Math.max(0, entState.offset - entState.limit); loadEntries();
+});
+$('ent-next').addEventListener('click', () => { entState.offset += entState.limit; loadEntries(); });
+$('ent-reset').addEventListener('click', () => {
+  ['ent-emp', 'ent-kind', 'ent-from', 'ent-to', 'ent-q'].forEach((id) => { $(id).value = ''; });
+  $('ent-pending').checked = false;
+  loadEntries(true);
+});
+
 $('sync-go').addEventListener('click', async () => {
   const btn = $('sync-go');
   btn.disabled = true; btn.textContent = 'Writing…';
   try {
-    const d = await api('/admin/sync', { body: {} });
+    // this one deliberately waits on Google, and retries, so it gets longer
+    const d = await api('/admin/sync', { body: {}, timeout: 60000 });
     if (d.busy) note($('sync-note'), d.message, '');
     else if (d.error) note($('sync-note'), `${plural(d.synced, 'entry', 'entries')} written, then the sheet refused: ${d.error}`, 'bad');
     else note($('sync-note'), d.synced ? `${plural(d.synced, 'entry', 'entries')} written to the sheet.` : 'Nothing was waiting — the sheet is up to date.', 'good');
@@ -846,7 +1019,7 @@ $('sync-go').addEventListener('click', async () => {
 });
 
 /* ================================================================ devices */
-let DEVS = [];
+const devState = { offset: 0, limit: 100, total: 0 };
 const whenStr = (v) => {
   if (!v) return '—';
   const d = new Date(v.replace(' ', 'T') + 'Z');            // D1 stores UTC
@@ -856,49 +1029,73 @@ const whenStr = (v) => {
   return days >= 1 ? `${time} <span class="quiet">(${plural(days, 'day', 'days')} ago)</span>` : time;
 };
 
-async function loadDevices() {
-  $('dev-body').innerHTML = '<tr class="empty-row"><td colspan="8">Loading…</td></tr>';
+async function loadDevices(resetPage) {
+  const mine = ++latest.devices;
+  if (resetPage) devState.offset = 0;
+  $('dev-body').innerHTML = '<tr class="empty-row"><td colspan="9">Loading…</td></tr>';
+  const p = new URLSearchParams();
+  if ($('dev-search').value.trim()) p.set('q', $('dev-search').value.trim());
+  if ($('dev-only-multi').checked) p.set('multi', '1');
+  if ($('dev-status').value) p.set('status', $('dev-status').value);
+  p.set('limit', devState.limit); p.set('offset', devState.offset);
   try {
-    ({ devices: DEVS } = await api('/admin/devices'));
-    renderDevices();
-  } catch (e) { $('dev-body').innerHTML = `<tr class="empty-row"><td colspan="8">${esc(e.message)}</td></tr>`; }
+    const d = await api('/admin/devices?' + p.toString());
+    if (mine !== latest.devices) return;
+    devState.total = d.total;
+    $('dev-flagged').innerHTML = d.multi_accounts
+      ? `<b>${plural(d.multi_accounts, 'account', 'accounts')} on 2+ devices</b>`
+      : 'nobody on more than one';
+    const STATUS = {
+      approved: '<span class="badge ok"><span class="dot"></span>approved</span>',
+      pending: '<span class="badge warn"><span class="dot"></span>waiting for you</span>',
+      rejected: '<span class="badge bad"><span class="dot"></span>rejected</span>',
+    };
+    $('dev-body').innerHTML = d.devices.length ? d.devices.map((r) => {
+      const many = r.device_count > 1;
+      const ids = `data-emp="${r.employee_id}" data-device="${esc(r.device_id)}" data-name="${esc(r.name)}" data-label="${esc(r.label || 'this phone')}"`;
+      const actions = r.status === 'pending'
+        ? `<button class="quiet-btn ok-btn" data-approve ${ids}>Approve</button>
+           <button class="quiet-btn danger-btn" data-reject ${ids}>Reject</button>`
+        : r.status === 'rejected'
+          ? `<button class="quiet-btn ok-btn" data-approve ${ids}>Approve</button>
+             <button class="quiet-btn" data-remove ${ids}>Remove</button>`
+          : `<button class="quiet-btn" data-remove ${ids}>Remove</button>
+             <button class="quiet-btn danger-btn" data-signout="${r.employee_id}" data-name="${esc(r.name)}">Sign out all</button>`;
+      return `
+      <tr class="${r.status === 'pending' ? 'req' : many ? 'flag' : ''}">
+        <td>${esc(r.name)}${r.active ? '' : ' <span class="quiet t-12">(disabled)</span>'}
+          ${many ? `<span class="dev-tag" style="margin-left:6px">${r.device_count} devices</span>` : ''}</td>
+        <td class="mono-cell t-13">${esc(r.username)}</td>
+        <td>${esc(r.label || 'Unknown device')}
+          ${r.shared ? '<span class="dev-tag" style="margin-left:6px" title="This same phone is signed in to another account too">shared phone</span>' : ''}</td>
+        <td>${STATUS[r.status] || STATUS.approved}</td>
+        <td><span class="dev-tag ${r.platform === 'android' ? 'android' : ''}">${r.platform === 'android' ? 'app' : 'browser'}</span></td>
+        <td class="mono-cell t-13">${whenStr(r.first_seen)}</td>
+        <td class="mono-cell t-13">${whenStr(r.last_seen)}</td>
+        <td class="mono-cell">${r.logins}</td>
+        <td style="text-align:right;white-space:nowrap">${actions}</td>
+      </tr>`; }).join('')
+      : `<tr class="empty-row"><td colspan="9">${devState.offset ? 'No more devices.'
+        : $('dev-status').value === 'pending' ? 'No phones are waiting for approval.'
+        : 'No sign-ins recorded yet. Devices appear here once operators sign in with the new app.'}</td></tr>`;
+
+    const from = d.total ? devState.offset + 1 : 0;
+    $('dev-count').innerHTML = d.total
+      ? `<b>${from}–${devState.offset + d.devices.length}</b> of ${d.total.toLocaleString()}`
+      : 'No devices';
+    $('dev-prev').disabled = devState.offset === 0;
+    $('dev-next').disabled = !d.has_more;
+  } catch (e) {
+    if (mine === latest.devices) $('dev-body').innerHTML = `<tr class="empty-row"><td colspan="9">${esc(e.message)}</td></tr>`;
+  }
 }
-
-function renderDevices() {
-  const q = norm($('dev-search').value);
-  const onlyMulti = $('dev-only-multi').checked;
-  const counts = new Map();
-  for (const d of DEVS) counts.set(d.employee_id, (counts.get(d.employee_id) || 0) + 1);
-
-  let list = DEVS;
-  if (onlyMulti) list = list.filter((d) => counts.get(d.employee_id) > 1);
-  if (q) list = list.filter((d) => norm(`${d.name} ${d.username} ${d.label || ''}`).includes(q));
-
-  const flagged = [...counts.values()].filter((n) => n > 1).length;
-  $('dev-count').innerHTML = `${plural(DEVS.length, 'device', 'devices')} · `
-    + (flagged ? `<b>${plural(flagged, 'account', 'accounts')} on 2+ devices</b>` : 'nobody on more than one');
-
-  $('dev-body').innerHTML = list.length ? list.map((d) => {
-    const many = counts.get(d.employee_id) > 1;
-    return `
-    <tr class="${many ? 'flag' : ''}">
-      <td>${esc(d.name)}${d.active ? '' : ' <span class="quiet t-12">(disabled)</span>'}
-        ${many ? `<span class="dev-tag" style="margin-left:6px">${counts.get(d.employee_id)} devices</span>` : ''}</td>
-      <td class="mono-cell t-13">${esc(d.username)}</td>
-      <td>${esc(d.label || 'Unknown device')}
-        ${d.shared ? '<span class="dev-tag" style="margin-left:6px" title="This same phone is signed in to another account too">shared phone</span>' : ''}</td>
-      <td><span class="dev-tag ${d.platform === 'android' ? 'android' : ''}">${d.platform === 'android' ? 'app' : 'browser'}</span></td>
-      <td class="mono-cell t-13">${whenStr(d.first_seen)}</td>
-      <td class="mono-cell t-13">${whenStr(d.last_seen)}</td>
-      <td class="mono-cell">${d.logins}</td>
-      <td style="text-align:right;white-space:nowrap">
-        <button class="quiet-btn danger-btn" data-signout="${d.employee_id}" data-name="${esc(d.name)}">Sign out all</button>
-      </td>
-    </tr>`; }).join('')
-    : `<tr class="empty-row"><td colspan="8">${DEVS.length ? 'Nothing matches.' : 'No sign-ins recorded yet. Devices appear here once operators sign in with the new app.'}</td></tr>`;
-}
-$('dev-search').addEventListener('input', renderDevices);
-$('dev-only-multi').addEventListener('change', renderDevices);
+$('dev-search').addEventListener('input', debounce(() => loadDevices(true), 350));
+$('dev-only-multi').addEventListener('change', () => loadDevices(true));
+$('dev-status').addEventListener('change', () => loadDevices(true));
+$('dev-prev').addEventListener('click', () => {
+  devState.offset = Math.max(0, devState.offset - devState.limit); loadDevices();
+});
+$('dev-next').addEventListener('click', () => { devState.offset += devState.limit; loadDevices(); });
 
 async function signOutAll(id, name) {
   if (!confirm(`Sign ${name} out of every device?\n\n`
@@ -914,9 +1111,39 @@ async function signOutAll(id, name) {
     return true;
   } catch (e) { note($('dev-note'), e.message, 'bad'); return false; }
 }
+async function decidePhone(b, action) {
+  const { emp, device, name, label } = b.dataset;
+  const ask = {
+    approve: `Approve ${label} for ${name}?\n\nThey can sign in on it straight away, as well as on their other approved phones.`,
+    reject: `Reject ${label} for ${name}?\n\nThey cannot sign in on it. Signing in again from it is refused without asking you again. You can still approve it later.`,
+    remove: `Remove ${label} for ${name}?\n\nThat phone is signed out at once; their other phones keep working. If they sign in on it again it comes back here for approval — unless it was their only phone, in which case it is let in like a first phone.`,
+  }[action];
+  if (!confirm(ask)) return;
+  b.disabled = true;
+  try {
+    if (action === 'remove') await api(`/admin/devices/${emp}`, { method: 'DELETE', body: { device_id: device } });
+    else await api(`/admin/devices/${emp}/${action}`, { body: { device_id: device } });
+    note($('dev-note'), {
+      approve: `${label} approved for ${name}. They can sign in on it now.`,
+      reject: `${label} rejected for ${name}.`,
+      remove: `${label} removed from ${name}'s phones.`,
+    }[action], 'good');
+    await Promise.all([loadDevices(), loadEmployees()]);
+    renderCrew(); loadSummary();
+  } catch (e) { note($('dev-note'), e.message, 'bad'); b.disabled = false; }
+}
 $('dev-body').addEventListener('click', (e) => {
   const b = e.target.closest('[data-signout]');
-  if (b) signOutAll(Number(b.dataset.signout), b.dataset.name);
+  if (b) return signOutAll(Number(b.dataset.signout), b.dataset.name);
+  for (const action of ['approve', 'reject', 'remove']) {
+    const btn = e.target.closest(`[data-${action}]`);
+    if (btn) return decidePhone(btn, action);
+  }
+});
+$('s-req-wrap').addEventListener('click', () => {
+  document.querySelector('#nav [data-tab=devices]').click();
+  $('dev-search').value = ''; $('dev-only-multi').checked = false; $('dev-status').value = 'pending';
+  loadDevices(true);
 });
 
 /* ================================================================ my account */

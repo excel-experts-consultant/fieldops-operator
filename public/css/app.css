@@ -169,9 +169,11 @@ button.block { width: 100%; padding: 15px; font-size: 16px; }
 }
 .notice.good { border-color: var(--ok); background: rgba(46, 158, 104, 0.09); }
 .notice.bad { border-color: var(--bad); background: rgba(198, 72, 63, 0.09); }
+.notice.warn { border-color: var(--warn); background: rgba(232, 160, 32, 0.10); }
 .deck .notice { background: rgba(53, 160, 184, 0.12); color: #d6e6e8; }
 .deck .notice.good { background: rgba(46, 158, 104, 0.14); }
 .deck .notice.bad { background: rgba(198, 72, 63, 0.16); }
+.deck .notice.warn { background: rgba(232, 160, 32, 0.16); }
 
 .badge {
   display: inline-flex; align-items: center; gap: 5px;
